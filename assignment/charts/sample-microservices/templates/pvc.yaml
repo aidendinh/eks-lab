@@ -1,0 +1,15 @@
+{{- if .Values.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sample-microservices-data
+  labels:
+    {{- include "sample-microservices.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.persistence.accessModes | nindent 4 }}
+  storageClassName: {{ .Values.persistence.storageClassName | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size | quote }}
+{{- end }}

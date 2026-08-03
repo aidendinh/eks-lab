@@ -1,0 +1,22 @@
+{{- $root := . -}}
+{{- range $name, $_ := .Values.services }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sample-microservices.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name | quote }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ $root.Chart.Name | quote }}
+    app.kubernetes.io/instance: {{ $root.Release.Name | quote }}
+    app.kubernetes.io/component: {{ $name | quote }}
+  ports:
+    - name: http
+      port: {{ $root.Values.service.port }}
+      targetPort: http
+      protocol: TCP
+{{- end }}

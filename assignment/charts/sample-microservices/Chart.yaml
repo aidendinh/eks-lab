@@ -1,0 +1,7 @@
+apiVersion: v2
+name: sample-microservices
+description: Observable sample services for the two-cluster EKS assignment
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.28.0-0"

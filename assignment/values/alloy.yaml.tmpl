@@ -1,0 +1,95 @@
+﻿controller:
+  type: daemonset
+  tolerations:
+    - operator: Exists
+
+alloy:
+  mounts:
+    varlog: true
+  extraPorts:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
+  configMap:
+    content: |-
+      logging {
+        level  = "info"
+        format = "logfmt"
+      }
+
+      discovery.kubernetes "pods" {
+        role = "pod"
+        selectors {
+          role  = "pod"
+          field = "spec.nodeName=" + sys.env("HOSTNAME")
+        }
+      }
+
+      discovery.relabel "pod_logs" {
+        targets = discovery.kubernetes.pods.targets
+
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+          target_label  = "app"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+          separator     = "/"
+          target_label  = "__path__"
+          replacement   = "/var/log/pods/*$1/$2/*.log"
+        }
+      }
+
+      loki.source.file "pod_logs" {
+        targets    = discovery.relabel.pod_logs.output
+        forward_to = [loki.process.pod_logs.receiver]
+      }
+
+      loki.process "pod_logs" {
+        stage.cri {}
+        forward_to = [loki.write.central.receiver]
+      }
+
+      loki.write "central" {
+        external_labels = {
+          cluster = "eks-workload",
+        }
+        endpoint {
+          url = "http://__TELEMETRY_ENDPOINT__/loki/api/v1/push"
+        }
+      }
+
+      otelcol.receiver.otlp "applications" {
+        grpc {
+          endpoint = "0.0.0.0:4317"
+        }
+        http {
+          endpoint = "0.0.0.0:4318"
+        }
+        output {
+          traces = [otelcol.exporter.otlphttp.central.input]
+        }
+      }
+
+      otelcol.exporter.otlphttp "central" {
+        client {
+          endpoint = "http://__TELEMETRY_ENDPOINT__"
+        }
+      }

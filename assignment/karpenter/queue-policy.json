@@ -1,0 +1,3 @@
+{
+  "Policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":[\"events.amazonaws.com\",\"sqs.amazonaws.com\"]},\"Action\":\"sqs:SendMessage\",\"Resource\":\"arn:aws:sqs:ap-southeast-1:600627340244:eks-workload-karpenter\"}]}"
+}

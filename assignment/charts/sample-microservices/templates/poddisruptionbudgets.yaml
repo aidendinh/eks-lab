@@ -1,0 +1,21 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+{{- $root := . -}}
+{{- range $name, $_ := .Values.services }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sample-microservices.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name | quote }}
+spec:
+  maxUnavailable: {{ $root.Values.podDisruptionBudget.maxUnavailable }}
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $root.Chart.Name | quote }}
+      app.kubernetes.io/instance: {{ $root.Release.Name | quote }}
+      app.kubernetes.io/component: {{ $name | quote }}
+{{- end }}
+{{- end }}

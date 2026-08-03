@@ -1,0 +1,71 @@
+﻿alertmanager:
+  enabled: false
+
+grafana:
+  enabled: false
+
+prometheusOperator:
+  admissionWebhooks:
+    patch:
+      nodeSelector:
+        workload-class: platform
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: platform
+          effect: NoSchedule
+  nodeSelector:
+    workload-class: platform
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: platform
+      effect: NoSchedule
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+prometheus:
+  prometheusSpec:
+    replicas: 1
+    retention: 2h
+    externalLabels:
+      cluster: eks-workload
+    remoteWrite:
+      - url: http://__TELEMETRY_ENDPOINT__/api/v1/write
+        queueConfig:
+          capacity: 2500
+          maxSamplesPerSend: 500
+          maxShards: 4
+    nodeSelector:
+      workload-class: platform
+    tolerations:
+      - key: dedicated
+        operator: Equal
+        value: platform
+        effect: NoSchedule
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+
+kube-state-metrics:
+  nodeSelector:
+    workload-class: platform
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: platform
+      effect: NoSchedule
+
+prometheus-node-exporter:
+  tolerations:
+    - operator: Exists
+

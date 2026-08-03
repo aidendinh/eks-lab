@@ -1,0 +1,19 @@
+replicas: 1
+nodeSelector:
+  workload-class: platform
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: platform
+    effect: NoSchedule
+controller:
+  env:
+    - name: AWS_REGION
+      value: ap-southeast-1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+settings:
+  clusterName: eks-workload
+  interruptionQueue: eks-workload-karpenter

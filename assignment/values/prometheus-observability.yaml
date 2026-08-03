@@ -1,0 +1,82 @@
+﻿alertmanager:
+  enabled: false
+
+grafana:
+  enabled: true
+  replicas: 1
+  persistence:
+    enabled: false
+  nodeSelector:
+    workload-class: observability
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  additionalDataSources:
+    - name: Loki
+      uid: loki
+      type: loki
+      access: proxy
+      url: http://loki-gateway.monitoring.svc.cluster.local
+      isDefault: false
+    - name: Tempo
+      uid: tempo
+      type: tempo
+      access: proxy
+      url: http://tempo.monitoring.svc.cluster.local:3100
+      isDefault: false
+      jsonData:
+        tracesToLogsV2:
+          datasourceUid: loki
+          filterByTraceID: true
+        serviceMap:
+          datasourceUid: prometheus
+
+prometheusOperator:
+  nodeSelector:
+    workload-class: observability
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+prometheus:
+  prometheusSpec:
+    replicas: 1
+    retention: 3d
+    enableRemoteWriteReceiver: true
+    externalLabels:
+      cluster: eks-observability
+    nodeSelector:
+      workload-class: observability
+    resources:
+      requests:
+        cpu: 300m
+        memory: 1Gi
+      limits:
+        cpu: "1"
+        memory: 3Gi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 20Gi
+
+kube-state-metrics:
+  nodeSelector:
+    workload-class: observability
+
+prometheus-node-exporter:
+  nodeSelector:
+    workload-class: observability
+

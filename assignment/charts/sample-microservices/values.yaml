@@ -1,0 +1,113 @@
+﻿# Defaults applied to every service. Individual services below may override
+# image, resources, probes and metrics scraping.
+image:
+  repository: 600627340244.dkr.ecr.ap-southeast-1.amazonaws.com/eks-lab-sample
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+clusterName: eks-workload
+otlpTracesEndpoint: http://alloy.monitoring.svc.cluster.local:4318/v1/traces
+
+serviceAccount:
+  create: true
+  name: sample-microservices
+
+services:
+  frontend:
+    replicaCount: 2
+    downstreamUrls:
+      - http://orders:8080/work
+      - http://inventory:8080/work
+
+  # The Java service. Same HTTP contract as the Python ones, but a JVM with
+  # JavaMelody attached, so it needs a different image, more memory, a longer
+  # startup allowance and a different metrics endpoint.
+  orders:
+    replicaCount: 4
+    downstreamUrls: []
+    image:
+      tag: "orders-java-0.1.0"
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 768Mi
+    # A JVM takes far longer to become ready than the Python services. Without
+    # a startupProbe the default liveness settings (initialDelay 5s, period 10s,
+    # threshold 3) would kill the container at roughly 35 seconds, producing a
+    # CrashLoopBackOff that looks like an application bug.
+    startupProbe:
+      enabled: true
+      failureThreshold: 30
+      periodSeconds: 5
+    # JavaMelody exposes Prometheus metrics on its own endpoint rather than
+    # /metrics: GET /monitoring?format=prometheus
+    metrics:
+      path: /monitoring
+      params:
+        format:
+          - prometheus
+      # JavaMelody emits metric names containing dots. Prometheus 3.x accepts
+      # them, but every PromQL query then needs the quoted-name syntax
+      # {"javamelody.used_memory_sys"}. Rewriting dots to underscores at scrape
+      # time keeps queries conventional. Set to false if you would rather see
+      # the raw names.
+      normalizeDotsInMetricNames: true
+    javamelody:
+      enabled: true
+      applicationName: orders
+      # Empty disables self-registration and the app runs standalone with only
+      # its own per-pod /monitoring UI.
+      collectorUrl: http://javamelody-collector.monitoring.svc.cluster.local:8080
+
+  inventory:
+    replicaCount: 2
+    downstreamUrls: []
+
+service:
+  port: 8080
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 128Mi
+
+nodeSelector:
+  workload-tier: mixed
+
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: microservices
+    effect: NoSchedule
+
+topologySpreadConstraints:
+  zone:
+    maxSkew: 1
+    whenUnsatisfiable: ScheduleAnyway
+  hostname:
+    maxSkew: 1
+    whenUnsatisfiable: DoNotSchedule
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+persistence:
+  # Enable only after you manually install EFS CSI and create this StorageClass.
+  enabled: false
+  storageClassName: efs-rwx
+  accessModes:
+    - ReadWriteMany
+  size: 1Gi
+
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  additionalLabels:
+    release: workload-monitoring

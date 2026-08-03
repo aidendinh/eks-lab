@@ -1,0 +1,50 @@
+{{- if .Values.serviceMonitor.enabled }}
+{{- $root := . -}}
+{{- range $name, $settings := .Values.services }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sample-microservices.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name | quote }}
+    {{- with $root.Values.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $root.Chart.Name | quote }}
+      app.kubernetes.io/instance: {{ $root.Release.Name | quote }}
+      app.kubernetes.io/component: {{ $name | quote }}
+  endpoints:
+    - port: http
+      path: {{ dig "metrics" "path" "/metrics" $settings | quote }}
+      interval: {{ $root.Values.serviceMonitor.interval }}
+      {{- with dig "metrics" "params" dict $settings }}
+      # JavaMelody selects its output format from a query parameter. Query
+      # strings belong in params, not appended to path — Prometheus URL-encodes
+      # path verbatim, so "/monitoring?format=prometheus" as a path would be
+      # requested literally and return 404.
+      params:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if dig "metrics" "normalizeDotsInMetricNames" false $settings }}
+      # JavaMelody names its series with dots (javamelody.used_memory_sys).
+      # Prometheus 3.x stores them, but PromQL then requires the quoted-name
+      # form {"javamelody.used_memory_sys"} everywhere. Rewriting to
+      # javamelody_used_memory_sys at scrape time keeps dashboards and queries
+      # conventional. Confirm the raw names with a curl before relying on this.
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: (.*)\.(.*)
+          targetLabel: __name__
+          replacement: ${1}_${2}
+        - sourceLabels: [__name__]
+          regex: (.*)\.(.*)
+          targetLabel: __name__
+          replacement: ${1}_${2}
+      {{- end }}
+{{- end }}
+{{- end }}

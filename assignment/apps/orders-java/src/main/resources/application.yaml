@@ -1,0 +1,58 @@
+﻿server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
+spring:
+  application:
+    name: ${SERVICE_NAME:orders}
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  datasource:
+    # Embedded H2. Nothing to provision, no cost, and it still gives JavaMelody
+    # a real JDBC DataSource + HikariCP pool to instrument.
+    url: jdbc:h2:mem:orders;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+    hikari:
+      pool-name: orders-pool
+      maximum-pool-size: 10
+      minimum-idle: 2
+  sql:
+    init:
+      mode: always
+
+javamelody:
+  enabled: true
+  # Wraps @Service / @Controller beans so the "Spring" statistics tab has rows.
+  spring-monitoring-enabled: true
+  init-parameters:
+    # RRD graph data. The pod runs with readOnlyRootFilesystem: true, so this
+    # must land on the emptyDir mounted at /tmp.
+    storage-directory: /tmp/javamelody
+    # Probes and the monitoring endpoint itself would otherwise dominate the
+    # HTTP statistics and drown out the real /work traffic.
+    url-exclude-pattern: (/healthz|/readyz|/monitoring.*)
+    # Collapse numeric path segments (e.g. /orders/12345) into a single
+    # aggregated row instead of one row per id.
+    http-transform-pattern: \d+
+
+app:
+  serviceName: ${SERVICE_NAME:orders}
+  clusterName: ${CLUSTER_NAME:eks-workload}
+  dataDir: ${DATA_DIR:/data}
+  downstreamUrls: ${DOWNSTREAM_URLS:}
+  otlpTracesEndpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:}
+  collector:
+    # Empty disables self-registration entirely, so the app runs standalone.
+    url: ${JAVAMELODY_COLLECTOR_URL:}
+    # The address the collector server polls back on. Defaults to this pod's IP,
+    # injected by the Downward API. Overridable without a rebuild in case the
+    # collector expects the full /monitoring URL rather than the app root.
+    nodeUrl: "${JAVAMELODY_NODE_URL:http://${POD_IP:127.0.0.1}:${PORT:8080}}"
+    applicationName: ${JAVAMELODY_APPLICATION_NAME:orders}
+
+logging:
+  level:
+    root: INFO
+    net.bull.javamelody: INFO

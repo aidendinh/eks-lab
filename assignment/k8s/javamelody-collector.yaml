@@ -1,0 +1,109 @@
+# JavaMelody collector server for eks-workload.
+#
+# Why this exists: JavaMelody's counters live inside each JVM, so four `orders`
+# replicas expose four unrelated /monitoring UIs. The collector polls every
+# registered node and presents one aggregated view of the application.
+#
+# It is platform tooling rather than application workload, so it is installed
+# with kubectl onto the tainted platform nodes — the same way Prometheus, Alloy
+# and Argo CD are — instead of being deployed by Argo CD alongside the sample
+# chart.
+#
+# Replace <ACCOUNT>.dkr.ecr.<REGION>.amazonaws.com/eks-lab-sample below if your
+# registry differs.
+apiVersion: v1
+kind: Service
+metadata:
+  name: javamelody-collector
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: javamelody-collector
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: javamelody-collector
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: javamelody-collector
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: javamelody-collector
+spec:
+  # Must stay at 1. The collector aggregates into local RRD files; a second
+  # replica would hold a different, equally partial picture — the exact problem
+  # it exists to solve.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: javamelody-collector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: javamelody-collector
+    spec:
+      nodeSelector:
+        workload-class: platform
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: platform
+          effect: NoSchedule
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 2000
+        fsGroup: 2000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: collector
+          image: 600627340244.dkr.ecr.ap-southeast-1.amazonaws.com/eks-lab-sample:javamelody-collector-2.8.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # Aggregated history is disposable in this lab. Note the consequence:
+        # restarting this pod clears its registered-node list, which is why the
+        # application pods re-register on a timer instead of only at startup.
+        - name: tmp
+          emptyDir: {}

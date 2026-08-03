@@ -1,0 +1,16 @@
+assignment/generated/
+assignment/.work/
+*.log
+__pycache__/
+*.py[cod]
+target/
+.mvn/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json

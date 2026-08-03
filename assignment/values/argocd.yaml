@@ -1,0 +1,33 @@
+global:
+  nodeSelector:
+    workload-class: platform
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: platform
+      effect: NoSchedule
+
+configs:
+  params:
+    server.insecure: false
+
+server:
+  replicas: 1
+  service:
+    type: ClusterIP
+
+controller:
+  replicas: 1
+
+repoServer:
+  replicas: 1
+
+applicationSet:
+  replicas: 1
+
+notifications:
+  enabled: false
+
+dex:
+  enabled: false
+
