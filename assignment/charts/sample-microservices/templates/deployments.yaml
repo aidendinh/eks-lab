@@ -43,7 +43,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       nodeSelector:
-        {{- toYaml $root.Values.nodeSelector | nindent 8 }}
+        {{- toYaml (mergeOverwrite (deepCopy $root.Values.nodeSelector) (dig "nodeSelector" (dict) $settings)) | nindent 8 }}
       tolerations:
         {{- toYaml $root.Values.tolerations | nindent 8 }}
       topologySpreadConstraints:
@@ -58,6 +58,14 @@ spec:
         - maxSkew: {{ $root.Values.topologySpreadConstraints.hostname.maxSkew }}
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: {{ $root.Values.topologySpreadConstraints.hostname.whenUnsatisfiable }}
+          {{- $minDomains := dig "topologySpread" "hostnameMinDomains" 0 $settings }}
+          {{- if gt (int $minDomains) 0 }}
+          # With few eligible nodes the skew check passes trivially (one domain
+          # = skew 0) and every replica packs onto one node. minDomains keeps
+          # the global minimum at 0 until this many domains exist, forcing
+          # Pending pods that Karpenter answers with new nodes.
+          minDomains: {{ $minDomains }}
+          {{- end }}
           labelSelector:
             matchLabels:
               app.kubernetes.io/name: {{ $root.Chart.Name | quote }}

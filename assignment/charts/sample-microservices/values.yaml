@@ -27,6 +27,15 @@ services:
     downstreamUrls: []
     image:
       tag: "orders-java-0.1.0"
+    # Pin to amd64 and demand four separate hostnames. Together these force
+    # Karpenter to launch four x86 nodes — the Spot NodePool caps at three, so
+    # the fourth lands On-Demand: the 1:3 shape the assignment demonstrates.
+    # Without minDomains a single mixed node satisfies the spread trivially
+    # (one domain = zero skew) and all four replicas pack onto it.
+    nodeSelector:
+      kubernetes.io/arch: amd64
+    topologySpread:
+      hostnameMinDomains: 4
     resources:
       requests:
         cpu: 250m
