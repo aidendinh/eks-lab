@@ -81,19 +81,17 @@ spec:
               containerPort: 8080
               protocol: TCP
           # Basic auth: the collector WAR only reads javamelody.* system
-          # properties, so the ESO-synced env var is expanded into a -D flag by
-          # a shell wrapper. Not JAVA_TOOL_OPTIONS — the JVM echoes that to
-          # stderr, which would leak the password into Loki.
-          command: ["sh", "-c"]
-          args:
-            - exec java -XX:MaxRAMPercentage=70.0
-              -Djavamelody.storage-directory=/tmp/javamelody-collector
-              -Djava.security.egd=file:/dev/./urandom
-              "-Djavamelody.authorized-users=$JAVAMELODY_AUTHORIZED_USERS"
-              -jar /app/collector-server.war
-          envFrom:
-            - secretRef:
-                name: javamelody-auth
+          # properties. The ESO-synced secret is mounted as a JVM @argfile so
+          # the credential never appears in the process cmdline (a -D flag
+          # would) nor in logs (JAVA_TOOL_OPTIONS is echoed to stderr).
+          command:
+            - java
+            - -XX:MaxRAMPercentage=70.0
+            - -Djavamelody.storage-directory=/tmp/javamelody-collector
+            - -Djava.security.egd=file:/dev/./urandom
+            - "@/auth/auth.args"
+            - -jar
+            - /app/collector-server.war
           # TCP probes: with javamelody.authorized-users set, HTTP probes would
           # get 401 and kill the pod.
           startupProbe:
@@ -117,7 +115,13 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: auth
+              mountPath: /auth
+              readOnly: true
       volumes:
+        - name: auth
+          secret:
+            secretName: javamelody-auth
         # Aggregated history is disposable in this lab. Note the consequence:
         # restarting this pod clears its registered-node list, which is why the
         # application pods re-register on a timer instead of only at startup.
