@@ -36,12 +36,18 @@ spec:
       # form {"javamelody.used_memory_sys"} everywhere. Rewriting to
       # javamelody_used_memory_sys at scrape time keeps dashboards and queries
       # conventional. Confirm the raw names with a curl before relying on this.
+      # The rule appears twice on purpose: the greedy regex rewrites one dot
+      # per pass, so two passes cover two-dot names. `action: replace` is the
+      # CRD default, stated explicitly so the server adds nothing and Argo CD
+      # sees no drift.
       metricRelabelings:
-        - sourceLabels: [__name__]
+        - action: replace
+          sourceLabels: [__name__]
           regex: (.*)\.(.*)
           targetLabel: __name__
           replacement: ${1}_${2}
-        - sourceLabels: [__name__]
+        - action: replace
+          sourceLabels: [__name__]
           regex: (.*)\.(.*)
           targetLabel: __name__
           replacement: ${1}_${2}
