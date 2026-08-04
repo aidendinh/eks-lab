@@ -80,8 +80,9 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
-          # Basic auth comes from the ESO-synced secret; JAVA_TOOL_OPTIONS is
-          # picked up by the JVM without touching the image ENTRYPOINT.
+          # Basic auth comes from the ESO-synced secret as JavaMelody's native
+          # JAVAMELODY_AUTHORIZED_USERS env var — not JAVA_TOOL_OPTIONS, which
+          # the JVM echoes to stderr and would leak the password into Loki.
           envFrom:
             - secretRef:
                 name: javamelody-auth
