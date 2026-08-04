@@ -103,8 +103,19 @@ spec:
                   fieldPath: status.podIP
             - name: JAVAMELODY_APPLICATION_NAME
               value: {{ dig "javamelody" "applicationName" $name $settings | quote }}
+            {{- if dig "javamelody" "collectorUrlSecret" "" $settings }}
+            # The collector requires Basic auth; the URL carries user:password
+            # as userinfo (JavaMelody's LabradorRetriever turns it into an
+            # Authorization header), so it lives in a secret, not in values.
+            - name: JAVAMELODY_COLLECTOR_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ dig "javamelody" "collectorUrlSecret" "" $settings }}
+                  key: JAVAMELODY_COLLECTOR_URL
+            {{- else }}
             - name: JAVAMELODY_COLLECTOR_URL
               value: {{ dig "javamelody" "collectorUrl" "" $settings | quote }}
+            {{- end }}
             {{- end }}
           ports:
             - name: http

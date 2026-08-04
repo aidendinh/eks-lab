@@ -67,9 +67,11 @@ services:
     javamelody:
       enabled: true
       applicationName: orders
-      # Empty disables self-registration and the app runs standalone with only
-      # its own per-pod /monitoring UI.
-      collectorUrl: http://javamelody-collector.monitoring.svc.cluster.local:8080
+      # The collector enforces Basic auth, so the URL (with credentials as
+      # userinfo) comes from this ESO-synced secret rather than from values.
+      # Setting collectorUrl instead (and no secret) works for an
+      # unauthenticated collector; empty disables self-registration entirely.
+      collectorUrlSecret: javamelody-collector-url
 
   inventory:
     replicaCount: 2
