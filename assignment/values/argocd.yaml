@@ -14,7 +14,9 @@ configs:
 server:
   replicas: 1
   service:
-    type: ClusterIP
+    type: LoadBalancer
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: nlb
 
 controller:
   replicas: 1

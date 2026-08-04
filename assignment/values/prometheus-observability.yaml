@@ -6,6 +6,10 @@ grafana:
   replicas: 1
   persistence:
     enabled: false
+  service:
+    type: LoadBalancer
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: nlb
   nodeSelector:
     workload-class: observability
   resources:
