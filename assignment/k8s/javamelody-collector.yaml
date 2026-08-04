@@ -80,9 +80,17 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
-          # Basic auth comes from the ESO-synced secret as JavaMelody's native
-          # JAVAMELODY_AUTHORIZED_USERS env var — not JAVA_TOOL_OPTIONS, which
-          # the JVM echoes to stderr and would leak the password into Loki.
+          # Basic auth: the collector WAR only reads javamelody.* system
+          # properties, so the ESO-synced env var is expanded into a -D flag by
+          # a shell wrapper. Not JAVA_TOOL_OPTIONS — the JVM echoes that to
+          # stderr, which would leak the password into Loki.
+          command: ["sh", "-c"]
+          args:
+            - exec java -XX:MaxRAMPercentage=70.0
+              -Djavamelody.storage-directory=/tmp/javamelody-collector
+              -Djava.security.egd=file:/dev/./urandom
+              "-Djavamelody.authorized-users=$JAVAMELODY_AUTHORIZED_USERS"
+              -jar /app/collector-server.war
           envFrom:
             - secretRef:
                 name: javamelody-auth
