@@ -1,0 +1,23 @@
+nodeSelector:
+  workload-class: platform
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: platform
+    effect: NoSchedule
+webhook:
+  nodeSelector:
+    workload-class: platform
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: platform
+      effect: NoSchedule
+certController:
+  nodeSelector:
+    workload-class: platform
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: platform
+      effect: NoSchedule

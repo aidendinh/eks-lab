@@ -6,6 +6,10 @@ grafana:
   replicas: 1
   persistence:
     enabled: false
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
   service:
     type: LoadBalancer
     annotations:
