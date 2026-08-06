@@ -151,7 +151,7 @@ resource "kubernetes_ingress_v1" "telemetry" {
     annotations = {
       # Remote-write batches and trace payloads are both larger than the 1m
       # nginx default, and a slow Loki flush outlasts the 60s read timeout.
-      "nginx.ingress.kubernetes.io/proxy-body-size"   = "32m"
+      "nginx.ingress.kubernetes.io/proxy-body-size"    = "32m"
       "nginx.ingress.kubernetes.io/proxy-read-timeout" = "120"
       "nginx.ingress.kubernetes.io/proxy-send-timeout" = "120"
     }

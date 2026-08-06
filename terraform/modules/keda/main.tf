@@ -22,9 +22,9 @@ resource "helm_release" "keda" {
 
     # The three components each take their own scheduling block; the top-level
     # one does not reach them.
-    operator          = { nodeSelector = var.node_selector, tolerations = var.tolerations }
-    metricsServer     = { nodeSelector = var.node_selector, tolerations = var.tolerations }
-    webhooks          = { nodeSelector = var.node_selector, tolerations = var.tolerations }
+    operator      = { nodeSelector = var.node_selector, tolerations = var.tolerations }
+    metricsServer = { nodeSelector = var.node_selector, tolerations = var.tolerations }
+    webhooks      = { nodeSelector = var.node_selector, tolerations = var.tolerations }
     resources = {
       operator = {
         requests = { cpu = "100m", memory = "128Mi" }

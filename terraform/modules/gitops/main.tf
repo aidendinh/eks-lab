@@ -56,13 +56,13 @@ resource "helm_release" "application" {
   chart = "${path.module}/chart"
 
   values = [yamlencode({
-    name            = var.application_name
-    namespace       = var.namespace
-    repoUrl         = var.repo_url
-    targetRevision  = var.target_revision
-    path            = var.chart_path
-    destNamespace   = var.destination_namespace
-    releaseName     = var.application_name
+    name           = var.application_name
+    namespace      = var.namespace
+    repoUrl        = var.repo_url
+    targetRevision = var.target_revision
+    path           = var.chart_path
+    destNamespace  = var.destination_namespace
+    releaseName    = var.application_name
   })]
 
   wait    = true

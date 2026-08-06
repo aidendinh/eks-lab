@@ -46,16 +46,16 @@ resource "helm_release" "nodepools" {
   chart = "${path.module}/chart"
 
   values = [yamlencode({
-    clusterName       = var.cluster_name
-    nodeRole          = var.node_role_name
-    securityGroupId   = var.security_group_id
-    discoveryTag      = var.cluster_name
-    instanceTypes     = var.instance_types
-    graviton          = var.graviton_instance_types
-    spotCpuLimit      = var.spot_cpu_limit
-    ondemandCpuLimit  = var.ondemand_cpu_limit
-    generalCpuLimit   = var.general_cpu_limit
-    gravitonCpuLimit  = var.graviton_cpu_limit
+    clusterName        = var.cluster_name
+    nodeRole           = var.node_role_name
+    securityGroupId    = var.security_group_id
+    discoveryTag       = var.cluster_name
+    instanceTypes      = var.instance_types
+    graviton           = var.graviton_instance_types
+    spotCpuLimit       = var.spot_cpu_limit
+    ondemandCpuLimit   = var.ondemand_cpu_limit
+    generalCpuLimit    = var.general_cpu_limit
+    gravitonCpuLimit   = var.graviton_cpu_limit
     microservicesTaint = var.microservices_taint
   })]
 

@@ -73,8 +73,8 @@ variable "spot_cpu_limit" {
     vCPU ceiling for the Spot half of pool 3. At 2 vCPU per t3.medium, 6 allows
     three Spot nodes — the "3" of the 1:3 ratio.
   EOT
-  type    = string
-  default = "6"
+  type        = string
+  default     = "6"
 }
 
 variable "ondemand_cpu_limit" {
@@ -82,8 +82,8 @@ variable "ondemand_cpu_limit" {
     vCPU ceiling for the On-Demand half of pool 3. At 2 vCPU per t3.medium, 2
     allows a single On-Demand node — the "1" of the 1:3 ratio.
   EOT
-  type    = string
-  default = "2"
+  type        = string
+  default     = "2"
 }
 
 variable "microservices_taint" {
