@@ -9,7 +9,14 @@ metadata:
     {{- include "sample-microservices.labels" $root | nindent 4 }}
     app.kubernetes.io/component: {{ $name | quote }}
 spec:
+  {{- if not (dig "autoscaling" "enabled" false $settings) }}
   replicas: {{ $settings.replicaCount }}
+  {{- else }}
+  # Deliberately omitted when KEDA owns this Deployment. Argo CD syncs with
+  # selfHeal, so a replicas value in Git would be treated as desired state and
+  # reverted the moment KEDA scaled away from it — the two would fight every
+  # reconcile and the autoscaling would never visibly hold.
+  {{- end }}
   revisionHistoryLimit: 3
   strategy:
     type: RollingUpdate
