@@ -49,6 +49,9 @@ public class CollectorServerRegistrar {
         if (collectorUrl == null || collectorUrl.isBlank()) {
             return;
         }
+        // The URL may carry Basic-auth credentials as userinfo; logs ship to
+        // Loki, so every log site gets the sanitized form.
+        String safeUrl = withoutUserInfo(collectorUrl);
 
         try {
             URL collector = URI.create(collectorUrl).toURL();
@@ -60,16 +63,41 @@ public class CollectorServerRegistrar {
 
             if (registered.compareAndSet(false, true)) {
                 logger.info("collector_registered",
-                        Map.of("collector", collectorUrl, "node", nodeUrl));
+                        Map.of("collector", safeUrl, "node", nodeUrl));
             }
         } catch (Exception e) {
+            // Exception messages from the HTTP client embed the full URL,
+            // credentials included — scrub before logging.
+            String error = scrubUserInfo(String.valueOf(e), collectorUrl);
             if (registered.compareAndSet(true, false)) {
                 logger.warning("collector_registration_lost",
-                        Map.of("collector", collectorUrl, "error", String.valueOf(e)));
+                        Map.of("collector", safeUrl, "error", error));
             } else if (!registered.get()) {
                 logger.warning("collector_registration_failed",
-                        Map.of("collector", collectorUrl, "error", String.valueOf(e)));
+                        Map.of("collector", safeUrl, "error", error));
             }
+        }
+    }
+
+    private static String scrubUserInfo(String text, String url) {
+        try {
+            String userInfo = URI.create(url).getUserInfo();
+            return userInfo == null ? text : text.replace(userInfo, "***");
+        } catch (Exception e) {
+            return text;
+        }
+    }
+
+    private static String withoutUserInfo(String url) {
+        try {
+            URI u = URI.create(url);
+            if (u.getUserInfo() == null) {
+                return url;
+            }
+            return new URI(u.getScheme(), null, u.getHost(), u.getPort(),
+                    u.getPath(), u.getQuery(), null).toString();
+        } catch (Exception e) {
+            return "<unparseable-collector-url>";
         }
     }
 
