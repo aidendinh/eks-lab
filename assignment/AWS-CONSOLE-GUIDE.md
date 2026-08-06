@@ -1,5 +1,18 @@
 # AWS Console guide — two-cluster EKS lab
 
+> ## Superseded — kept for reference only
+>
+> The lab is now provisioned by Terraform. The build path is
+> [`../implementation.md`](../implementation.md); the design is
+> [`README.md`](README.md).
+>
+> This guide describes clicking the same resources into existence by hand. It is
+> retained because its troubleshooting notes are still accurate — the CoreDNS
+> toleration trap, the `-internal` NLB annotation, the admission-webhook patch
+> job — but **do not follow it as a build procedure**. It contradicts the
+> Terraform state in specifics (node sizes, resource names, the EFS and Graviton
+> gaps it leaves open), and running both creates duplicate infrastructure.
+
 **This is the complete build, in the order the work actually happens.** Sections 1–4: free prep (network, IAM). Section 5: ECR and the container images — done **before** any cluster exists, because they need none and the meter has not started. Sections 6–8: the clusters, through the console. Section 9: everything the console cannot do (kubectl, Helm, Argo CD, validation). Section 12: teardown. Work top to bottom; each section depends on the ones before it.
 
 **Do not mix with Terraform.** `assignment/terraform/` builds the same resources; running both creates duplicates and orphans. Following this guide means ignoring that directory.

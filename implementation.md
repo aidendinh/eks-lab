@@ -1,123 +1,285 @@
-# Two-cluster EKS lab — replication guide
+# Two-cluster EKS lab — build runbook
 
-Step-by-step to rebuild this project from scratch. Region `ap-southeast-1`, all console work unless a command is shown. Full explanations live in `assignment/AWS-CONSOLE-GUIDE.md` — this is the checklist version.
+Terraform builds everything. Region `ap-southeast-1`, AWS CLI profile `AWS`.
+Architecture and design rationale: [`assignment/README.md`](assignment/README.md).
+
+Rough cost while running: two EKS control planes ($0.20/hr), one NAT gateway
+($0.045/hr), five `t3.medium` plus whatever Karpenter launches, three NLBs, EFS.
+Call it **$0.60–0.80/hr**. Tear it down the same day — section 6.
 
 ## 0. Prerequisites
 
-- Tools: `aws` CLI (SSO profile `AWS`), `kubectl`, `helm`, Docker Desktop, Git.
-- Verify identity: `aws sts get-caller-identity --profile AWS` — note your IP (`checkip.amazonaws.com`); both cluster endpoints get locked to `<YOUR_IP>/32`.
-- Tag every resource: `Project=eks-two-cluster-assignment`, `Environment=lab`, `ManagedBy=AWSConsole`, `Owner=assignment`.
-- Cost: ~$5–7 for a one-sitting build; teardown same day.
+- `terraform` ≥ 1.9, `kubectl`, `helm` 3+, `docker` with `buildx`, `aws` CLI v2.
+- `aws sts get-caller-identity --profile AWS` must succeed.
+- Your public address, which both API endpoints get locked to:
 
-## 1. Network (free until the NAT)
+  ```bash
+  curl -s https://checkip.amazonaws.com
+  ```
 
-- Use the default VPC; create two **private** subnets (one per AZ, e.g. `1a`, `1b`), auto-assign public IP **off**, tag `kubernetes.io/role/internal-elb=1`.
-- Create NAT gateway `eks-lab-nat` in a **public** subnet, allocate an Elastic IP, wait Available.
-- Create route table `eks-lab-private`: route `0.0.0.0/0 → NAT`, associate **only** the two private subnets.
-- Checkpoint: private subnets have no public-IP auto-assign, no IGW route; NAT sits in a public subnet — a NAT in a private subnet routes to itself and nothing works.
+  Put it in `terraform/envs/lab/10-infra/terraform.tfvars`:
 
-## 2. IAM roles (free, kept at teardown)
+  ```hcl
+  operator_cidr = "<your ip>/32"
+  ```
 
-- `eks-lab-cluster-role` — EKS - Cluster use case, `AmazonEKSClusterPolicy` only. Shared by both clusters.
-- `eks-lab-workload-node-role` — EC2 trust, exactly: `AmazonEKSWorkerNodePolicy`, `AmazonEC2ContainerRegistryPullOnly`, `AmazonEKS_CNI_Policy`. Nothing else, ever.
-- `eks-lab-observability-node-role` — identical.
-- No KMS key anywhere — EKS envelope-encrypts with an AWS-owned key since 1.28.
+  Re-run `terraform apply` in `10-infra` whenever your address changes, or every
+  `kubectl` call will hang.
 
-## 3. ECR and images (before any cluster exists)
+## 1. Images
 
-- Create private repo `eks-lab-sample`, **Mutable** tags, scan on push, lifecycle rule: expire untagged after 1 day.
-- Login: `aws ecr get-login-password --profile AWS --region ap-southeast-1 | docker login --username AWS --password-stdin <ACCOUNT>.dkr.ecr.ap-southeast-1.amazonaws.com`
-- Build all three images **multi-arch** (`--platform linux/amd64,linux/arm64 --provenance=false --sbom=false --push`):
-  - `:0.1.0` from `assignment/apps/sample-microservice` (Python — frontend, inventory)
-  - `:orders-java-0.1.0` from `assignment/apps/orders-java` (Spring Boot + JavaMelody)
-  - `:javamelody-collector-2.8.0` from `assignment/apps/javamelody-collector`
-- Verify each tag shows an image index with amd64 + arm64 children.
+Three images, all multi-arch — `inventory` runs on Graviton, so a single-arch
+image would leave its pods in `ImagePullBackOff` with no obvious cause.
 
-## 4. Cluster `eks-observability` (hourly meter starts)
+```bash
+cd terraform/envs/lab/10-infra && terraform init && terraform apply   # creates the ECR repo
+REPO=$(terraform output -raw ecr_repository_url)
 
-- EKS → Create cluster, **Custom configuration**, Auto Mode **off**:
-  - Version 1.36, service role `eks-lab-cluster-role`, bootstrap admin **on**, auth mode `EKS API`, secrets encryption empty.
-  - VPC: the two private subnets only; private endpoint on; public endpoint on, allowlist `<YOUR_IP>/32`.
-  - All five control-plane log types on; Container Insights off.
-  - Add-ons: exactly VPC CNI, CoreDNS, kube-proxy, Pod Identity Agent. **No CSI drivers.**
-- After Active: CloudWatch log group `/aws/eks/eks-observability/cluster` retention → 7 days.
-- Node group `observability`: role `eks-lab-observability-node-role`, label `workload-class=observability`, no taints, AL2023 x86-64, **On-Demand**, `t3.large`, 20 GiB, 1/1/1, **one subnet only** (EBS volumes are zonal — two subnets means a replacement node can't attach volumes from the other AZ).
+aws ecr get-login-password --profile AWS --region ap-southeast-1 \
+  | docker login --username AWS --password-stdin "${REPO%%/*}"
 
-## 5. Cluster `eks-workload`
+docker buildx create --name ekslab --use --bootstrap   # once
 
-- Same wizard as section 4, name `eks-workload`; log retention 7 days after Active.
-- Node group `platform`: role `eks-lab-workload-node-role`, label `workload-class=platform`, taint `dedicated=platform:NoSchedule`, AL2023 x86-64, On-Demand, `t3.large`+`t3a.large`, 20 GiB, 2/2/2, both private subnets.
-- **Immediately after `platform` is Active**: EKS → Add-ons → CoreDNS → Edit → optional configuration — add nodeSelector `workload-class: platform` and tolerations (`CriticalAddonsOnly Exists`, `node-role.kubernetes.io/control-plane Exists NoSchedule`, `dedicated=platform NoSchedule`). Add-on config replaces, not merges — restate the defaults. Without this CoreDNS sits Pending and DNS is broken.
-- Node group `graviton-spot`: same role, label `workload-tier=mixed`, taint `dedicated=microservices:NoSchedule`, **AL2023 ARM64**, **Spot**, `t4g.medium`+`t4g.large`, 20 GiB, 1/1/1, both private subnets.
-- Final compute shape: pool 1 `platform` (2 On-Demand x86), pool 2 Karpenter 1 On-Demand + 3 Spot x86 (step 10), pool 3 `graviton-spot` (1 Spot arm64).
-
-## 6. Kubeconfig and base health
-
-```
-aws eks update-kubeconfig --profile AWS --region ap-southeast-1 --name eks-workload --alias eks-workload
-aws eks update-kubeconfig --profile AWS --region ap-southeast-1 --name eks-observability --alias eks-observability
-kubectl --context eks-workload get nodes -o wide
-kubectl --context eks-observability get nodes -o wide
+cd ../../../../assignment/apps
+for spec in "sample-microservice:0.1.0" \
+            "orders-java:orders-java-0.1.0" \
+            "javamelody-collector:javamelody-collector-2.8.0"; do
+  docker buildx build --platform linux/amd64,linux/arm64 \
+    --provenance=false --sbom=false \
+    -t "$REPO:${spec#*:}" --push "${spec%%:*}"
+done
 ```
 
-- Expect 3 Ready nodes / 1 Ready node. `Unauthorized` = your CLI identity has no access entry — add one with the IAM **role** ARN, not the assumed-role session ARN.
-- No nodes at all = node groups CREATE_FAILED on `Ec2SubnetInvalidConfiguration` = the NAT/private-route work from step 1 is missing or wrong.
+Verify each tag really is an index with two children:
 
-## 7. EBS CSI + `gp3` StorageClass (on `eks-observability`)
+```bash
+docker buildx imagetools inspect "$REPO:0.1.0" | grep Platform
+```
 
-- IAM role `eks-lab-ebs-csi-role`: custom trust for `pods.eks.amazonaws.com` (`sts:AssumeRole` + `sts:TagSession`), attach `AmazonEBSCSIDriverPolicy`.
-- EKS → Add-ons → Amazon EBS CSI Driver; Pod Identity association: namespace `kube-system`, SA `ebs-csi-controller-sa`, that role.
-- `kubectl --context eks-observability apply -f assignment/k8s/gp3-storageclass.yaml`
-- Gate: `get csidriver ebs.csi.aws.com` and `get storageclass gp3` both succeed.
+> Source files must not carry a UTF-8 BOM. `javac` rejects it outright
+> (`illegal character: '﻿'`) and the Maven build fails inside the image
+> build, where `-q` hides the reason.
 
-## 8. Observability stack (on `eks-observability`)
+## 2. Infrastructure — `10-infra`
 
-- Add helm repos: `prometheus-community`, `grafana`, `grafana-community`, `ingress-nginx`, `argo`; create namespaces `monitoring`, `ingress-nginx`.
-- Install, each with `--wait --timeout 15m` and its values file from `assignment/values/`:
-  - kube-prometheus-stack 88.0.1 → release `monitoring` (remote-write receiver on, pinned to the observability node)
-  - loki 18.7.1 (`grafana-community` repo, SingleBinary, 10 GiB)
-  - tempo 2.2.3 (single-binary, OTLP 4317/4318, 10 GiB)
-  - ingress-nginx 4.15.1 (internal NLB via annotations)
-- `kubectl --context eks-observability apply -f assignment/k8s/telemetry-ingress.yaml`
-- Wait for the NLB hostname: `kubectl --context eks-observability -n ingress-nginx get svc ingress-nginx-controller` — stuck `<pending>` = missing `internal-elb` subnet tag.
+```bash
+cd terraform/envs/lab/10-infra
+terraform init
+terraform apply
+```
 
-## 9. Render templates, then workload platform (on `eks-workload`)
+Creates the VPC, both clusters, managed node groups, EFS, the Karpenter IAM and
+interruption queue, and the single `eks-lab` Secrets Manager secret. Takes about
+20 minutes, most of it EKS control planes.
 
-- Copy each `.tmpl` into `assignment/generated/` (git-ignored) minus the suffix; replace `__TELEMETRY_ENDPOINT__` with the NLB hostname and `__GIT_REPOSITORY_URL__` with your fork's URL.
-- Create namespaces `monitoring`, `argocd`; install with `--wait --timeout 15m`:
-  - kube-prometheus-stack 88.0.1 → release `workload-monitoring` with `generated/prometheus-workload.yaml` (a forwarder: 2h retention, remote-writes to the NLB)
-  - alloy 1.11.0 with `generated/alloy.yaml` (logs → Loki, traces → Tempo)
-  - argo-cd 10.2.2 with `values/argocd.yaml`
-- All nodes here are tainted — every component needs the `dedicated=platform` toleration, **including kube-prometheus-stack's admission-webhook patch job** (`prometheusOperator.admissionWebhooks.patch.*`); missing it = install times out on a Pending hook job.
-- JavaMelody collector: `kubectl --context eks-workload apply -f assignment/k8s/javamelody-collector.yaml`, wait for rollout.
+Then point kubectl at both:
 
-## 10. Karpenter (on `eks-workload`)
+```bash
+for c in eks-workload eks-observability; do
+  aws eks update-kubeconfig --profile AWS --region ap-southeast-1 --name $c --alias $c
+done
+kubectl --context eks-workload get nodes -L workload-class
+kubectl --context eks-observability get nodes -L workload-class
+```
 
-- IAM role `eks-lab-karpenter-controller-role`: Pod Identity trust, inline policy from `assignment/karpenter/controller-policy.json` (must include `iam:ListInstanceProfiles`).
-- SQS queue `eks-workload-karpenter`, retention 5 min, access policy allowing EventBridge/SQS to send.
-- Four EventBridge rules → the queue: Spot interruption warning, rebalance recommendation, instance state-change, AWS Health event.
-- EKS → Access → Pod Identity association: role above, namespace `karpenter`, SA `karpenter`.
-- Install controller: `helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter --kube-context eks-workload --namespace karpenter --create-namespace --version 1.14.0 --values assignment/karpenter/helm-values.yaml --wait --timeout 10m`
-- `kubectl --context eks-workload apply -f assignment/karpenter/nodeclass-nodepools.yaml` — EC2NodeClass on the private subnets + cluster SG; two NodePools (On-Demand capped `cpu: 2`, Spot capped `cpu: 6`), both amd64 `t3.medium`/`t3a.medium`, labeled `workload-tier=mixed`, tainted `dedicated=microservices:NoSchedule`.
-- Gate: controller Running, EC2NodeClass Ready, both NodePools Ready at 0 nodes.
+Expect 3 Ready and 2 Ready. `Unauthorized` means `operator_cidr` is stale or
+your CLI identity differs from the one that created the clusters.
 
-## 11. Deploy the sample app via Argo CD
+## 3. Platform — `20-platform`
 
-- Commit and push everything except `assignment/generated/`.
-- `kubectl --context eks-workload apply -f assignment/generated/app.yaml` — Argo CD syncs `assignment/charts/sample-microservices` from Git; never `helm install` the chart directly.
-- Karpenter launches the 1+3 nodes as pods go Pending; watch with `kubectl --context eks-workload get nodes -L workload-tier,karpenter.sh/capacity-type,kubernetes.io/arch`.
+```bash
+cd ../20-platform
+terraform init
+terraform apply
+```
 
-## 12. Validate
+Installs, in dependency order: ESO on both clusters → the observability stack →
+the workload shippers pointed at its internal NLB → Karpenter, KEDA, Argo CD →
+the JavaMelody collector.
 
-- Placement: platform pods on platform nodes; sample pods only on `workload-tier=mixed`; four `orders` replicas on four different hostnames; at least one sample pod on the arm64 node.
-- Resiliency: every multi-replica deployment has a PDB with allowed disruptions ≥ 1; drain a Spot node — at most one replica of any service evicted; uncordon after.
-- Telemetry: port-forward Grafana on the observability cluster — workload metrics (`cluster=eks-workload`), logs in Loki, traces in Tempo.
-- JavaMelody: generate traffic via frontend `/work`; `orders` `/monitoring?format=prometheus` returns metrics; collector UI lists exactly four `orders` nodes.
+> **Run `apply` a second time if the first fails on `helm_release.resources`
+> with `no matches for kind "ClusterSecretStore"`.** The Helm provider resolves a
+> release's manifests against an API discovery snapshot, and on a cold cluster
+> that snapshot predates the CRDs the ESO release has only just installed. The
+> second apply sees them. Everything else converges in one pass.
 
-## 13. Teardown (same day)
+Outputs:
 
-- Kubernetes first: delete the Argo CD Application, collector, workload helm releases; delete Karpenter NodePools and **wait for its instances to terminate** before removing the controller; then observability releases; wait until the NLB disappears from EC2.
-- Delete node groups, then clusters (workload first), waiting for each.
-- Delete: ECR image tags, NAT gateway, **release the Elastic IP**, surviving EBS volumes, orphaned ENIs/SGs/target groups, Karpenter SQS/EventBridge/IAM leftovers if not rebuilding.
-- Keep (free): private subnets, `eks-lab-private` route table (blackhole NAT route is expected), the IAM roles, the empty ECR repo.
-- Never touch the pre-existing VPC, public subnets, their route table, or the IGW.
+```bash
+terraform output          # telemetry_endpoint, grafana_url, argocd_url
+terraform -chdir=../10-infra output -raw grafana_password
+terraform -chdir=../10-infra output -raw argocd_password
+```
+
+Both UIs are on public NLBs and are credential-gated; the credentials come from
+the `eks-lab` secret via ESO, not from either chart's generated default.
+
+## 4. Applications
+
+Nothing here applies the microservices chart. Argo CD syncs it from Git, so the
+only step is making sure Git has what you expect:
+
+```bash
+git push origin main
+kubectl --context eks-workload -n argocd get application sample-microservices
+```
+
+`Synced / Healthy` is the goal. Karpenter then launches nodes as the Pending
+pods appear — watch with:
+
+```bash
+kubectl --context eks-workload get nodes \
+  -L workload-tier,karpenter.sh/capacity-type,kubernetes.io/arch -w
+```
+
+## 5. Verification
+
+Each command below maps to one requirement.
+
+**Modular Terraform**
+
+```bash
+ls terraform/modules            # vpc eks-cluster efs karpenter secrets ...
+terraform -chdir=terraform/envs/lab/10-infra validate
+terraform -chdir=terraform/envs/lab/20-platform validate
+```
+
+**Managed node group runs infrastructure only** — every pod on a `platform`
+node should be a system component, and no `sample` pod should appear:
+
+```bash
+kubectl --context eks-workload get pods -A -o wide \
+  --field-selector spec.nodeName=$(kubectl --context eks-workload get nodes \
+    -l workload-class=platform -o jsonpath='{.items[0].metadata.name}')
+```
+
+**Three Karpenter pools**
+
+```bash
+kubectl --context eks-workload get nodepool
+kubectl --context eks-workload get nodepool graviton-arm64 \
+  -o jsonpath='{.spec.template.spec.requirements}' | jq
+```
+
+**Pool 3 is 1 On-Demand : 3 Spot, and it came from scheduling**
+
+```bash
+kubectl --context eks-workload get nodes -l workload-tier=mixed \
+  -L karpenter.sh/capacity-type,node.kubernetes.io/instance-type
+```
+
+Then confirm nothing hardcoded it — the NodePools name no fleet, only a vCPU
+ceiling, and the four nodes exist because four `orders` replicas cannot share
+one:
+
+```bash
+grep -A3 "limits:" terraform/modules/karpenter-controller/chart/templates/nodepools.yaml
+kubectl --context eks-workload -n sample get pods -l app.kubernetes.io/component=orders -o wide
+```
+
+**EFS-backed PersistentVolume, dynamically provisioned**
+
+```bash
+kubectl --context eks-workload get sc efs-rwx
+kubectl --context eks-workload -n sample get pvc,pv
+kubectl --context eks-workload -n sample exec deploy/orders -- sh -c 'mount | grep /data'
+```
+
+The PV must have no matching pre-created object in Terraform — it is created by
+the CSI driver as an EFS access point when the claim is made.
+
+**Topology spread and pod anti-affinity**
+
+```bash
+kubectl --context eks-workload -n sample get deploy orders -o jsonpath='{.spec.template.spec.affinity}' | jq
+kubectl --context eks-workload -n sample get pods -o wide --sort-by .spec.nodeName
+```
+
+No two replicas of one service should share a node.
+
+**Argo CD is the only delivery path**
+
+```bash
+helm --kube-context eks-workload list -A | grep sample-microservices
+```
+
+The only release is `sample-microservices-app` in `argocd` — the Application
+object itself. The workloads in `sample` belong to Argo CD, not Helm.
+
+**KEDA**
+
+```bash
+kubectl --context eks-workload -n sample get scaledobject,hpa
+```
+
+Drive load at the frontend and watch replicas climb:
+
+```bash
+kubectl --context eks-workload -n sample run load --rm -it --image=busybox --restart=Never \
+  -- sh -c 'while true; do wget -q -O- http://frontend:8080/work >/dev/null; done'
+```
+
+**Metrics, logs and traces reaching cluster 2** — in Grafana, or from the CLI:
+
+```bash
+kubectl --context eks-observability -n monitoring port-forward svc/monitoring-kube-prometheus-prometheus 9090 &
+curl -s 'localhost:9090/api/v1/query?query=up{cluster="eks-workload"}' | jq '.data.result | length'
+```
+
+A non-zero count proves remote-write. For logs and traces, query Loki for
+`{cluster="eks-workload"}` and open any trace in Tempo.
+
+**JavaMelody**
+
+```bash
+kubectl --context eks-workload -n sample exec deploy/orders -- \
+  wget -qO- 'localhost:8080/monitoring?format=prometheus' | head
+```
+
+The collector aggregates all four `orders` JVMs; its UI is on the NLB in front
+of `javamelody-collector` in `monitoring`, behind Basic auth whose credentials
+live in the `eks-lab` secret.
+
+**One secret, synced by ESO**
+
+```bash
+aws secretsmanager list-secrets --profile AWS --region ap-southeast-1 \
+  --query "SecretList[].Name"
+kubectl --context eks-workload get externalsecret -A
+kubectl --context eks-observability get externalsecret -A
+```
+
+Exactly one lab secret, named `eks-lab`. Every ExternalSecret should report
+`SecretSynced`.
+
+## 6. Teardown
+
+Order matters — Kubernetes objects hold AWS resources that Terraform does not
+know about (NLBs from Services, EC2 instances from Karpenter).
+
+```bash
+# 1. Let Argo CD remove the applications, and Karpenter release its nodes.
+kubectl --context eks-workload -n argocd delete application sample-microservices
+kubectl --context eks-workload delete nodepool --all
+kubectl --context eks-workload get nodes -l workload-tier   # wait until empty
+
+# 2. Platform layer: deletes the Helm releases, and with them the three NLBs.
+terraform -chdir=terraform/envs/lab/20-platform destroy
+
+# 3. Infrastructure.
+terraform -chdir=terraform/envs/lab/10-infra destroy
+```
+
+If step 3 stalls on the VPC, an NLB or its ENIs outlived step 2 — find them in
+EC2 → Network Interfaces, filtered by the VPC, and delete them before retrying.
+
+Confirm nothing is left billing:
+
+```bash
+aws ec2 describe-nat-gateways --profile AWS --region ap-southeast-1 \
+  --filter Name=state,Values=available --query "NatGateways[].NatGatewayId"
+aws ec2 describe-addresses --profile AWS --region ap-southeast-1 --query "Addresses[].PublicIp"
+aws efs describe-file-systems --profile AWS --region ap-southeast-1 --query "FileSystems[].FileSystemId"
+```
+
+All three should be empty.

@@ -186,6 +186,11 @@ module "gitops" {
 
   node_selector = local.platform_node_selector
   tolerations   = local.platform_tolerations
+
+  # The chart Argo CD syncs contains ServiceMonitors, so the Prometheus operator
+  # CRDs have to be in place before the first sync — otherwise the Application
+  # burns its retry budget and sits SyncFailed until something nudges it.
+  depends_on = [module.telemetry_agents]
 }
 
 module "eso_workload" {

@@ -5,9 +5,13 @@ variable "namespace" {
 }
 
 variable "chart_version" {
-  description = "external-secrets chart version."
-  type        = string
-  default     = "0.14.4"
+  description = <<-EOT
+    external-secrets chart version. Must be a release whose CRDs serve
+    `external-secrets.io/v1` — the 0.14.x line only serves v1alpha1/v1beta1, and
+    the manifests in this repo are written against v1.
+  EOT
+  type    = string
+  default = "2.8.0"
 }
 
 variable "region" {

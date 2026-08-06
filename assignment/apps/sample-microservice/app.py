@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Dependency-free HTTP microservice used by the EKS assignment."""
 
 from __future__ import annotations
