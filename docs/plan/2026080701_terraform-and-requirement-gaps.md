@@ -73,6 +73,45 @@ Two further items, not requirement violations but blockers for a Terraform-provi
 Every row of the gap table closed and verified against running infrastructure, with the
 command and its real output recorded in the docs.
 
+## Outcome — 2026-08-07
+
+All six gaps closed and verified live; captured output in
+[`../verification-2026-08-07.md`](../verification-2026-08-07.md).
+
+| # | Gap | Verified by |
+| --- | --- | --- |
+| 1 | Terraform | 80 resources in `10-infra`, 14 in `20-platform`, both applied |
+| 2 | KEDA | ScaledObject `Ready=True/Active=True`; frontend scaled 2 → 4 under load |
+| 3 | EFS | PVC `Bound`, `RWX`, `efs-rwx`; apps write `/data/frontend-events.jsonl` |
+| 4 | Graviton pool | NodePool `graviton-arm64` Ready; `inventory` running on arm64 Spot |
+| 5 | Pod anti-affinity | `requiredDuringScheduling…` on hostname; 8 replicas on 8 distinct nodes |
+| 6 | Secret name | One secret, `eks-lab`; 4 ExternalSecrets `SecretSynced` across both clusters |
+
+Pool 3 emerged as **1 On-Demand : 3 Spot** from scheduling alone, as required.
+
+### Defects found and fixed along the way
+
+- **UTF-8 BOM** in `AppProperties.java` (and five other files) broke the Maven build
+  inside the Docker build, where `-q` hid the cause. Stripped repo-wide.
+- **ESO chart 0.14.4 does not serve `external-secrets.io/v1`**, which every manifest in
+  this repo targets. Pinned to 2.8.0.
+- **CloudWatch log group race**: EKS auto-creates the group when control-plane logging is
+  on, so Terraform's create lost with `ResourceAlreadyExists`. The cluster now depends on
+  the log group, so retention actually applies.
+- **Argo CD `selfHeal` vs KEDA**: the chart shipped `replicas` for a KEDA-managed
+  Deployment, so every scale event was reverted on the next reconcile. `replicas` is now
+  omitted when `autoscaling.enabled`.
+- **KEDA trigger address**: kube-prometheus-stack truncates its Service name to
+  `<release>-kube-p-prometheus`; the wrong name left the ScaledObject `Ready=False`.
+- **Pool 1 vCPU ceiling** was too low for the frontend's `maxReplicas` under required
+  anti-affinity — scaled pods would have sat Pending. Raised to 8.
+
+### Known rough edge
+
+`20-platform` may need a second `apply` on a cold cluster: the Helm provider resolves a
+release's manifests against an API discovery snapshot that can predate CRDs installed
+earlier in the same apply. Documented in the runbook rather than papered over.
+
 ## Out of scope
 
 - Multi-environment promotion (`envs/` holds `lab` only — YAGNI until a second env exists).

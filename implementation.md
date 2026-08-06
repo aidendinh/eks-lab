@@ -97,11 +97,13 @@ Installs, in dependency order: ESO on both clusters → the observability stack 
 the workload shippers pointed at its internal NLB → Karpenter, KEDA, Argo CD →
 the JavaMelody collector.
 
-> **Run `apply` a second time if the first fails on `helm_release.resources`
-> with `no matches for kind "ClusterSecretStore"`.** The Helm provider resolves a
-> release's manifests against an API discovery snapshot, and on a cold cluster
-> that snapshot predates the CRDs the ESO release has only just installed. The
-> second apply sees them. Everything else converges in one pass.
+> **If `helm_release.resources` fails with `no matches for kind
+> "ClusterSecretStore" in version "external-secrets.io/v1"`, re-run `apply`.**
+> During this build that error meant the pinned ESO chart was too old to serve
+> the `v1` API — fixed by moving to chart 2.8.0. The same message can also
+> appear on a genuinely cold cluster, where the Helm provider resolves manifests
+> against an API discovery snapshot taken before the release installed its own
+> CRDs; a second apply sees them. Everything else converged in one pass.
 
 Outputs:
 
