@@ -109,6 +109,28 @@ Pool 3 emerged as **1 On-Demand : 3 Spot** from scheduling alone, as required.
 - **Pool 1 vCPU ceiling** was too low for the frontend's `maxReplicas` under required
   anti-affinity — scaled pods would have sat Pending. Raised to 8.
 
+## Later additions — 2026-08-07 (second pass)
+
+Re-read of the original brief surfaced one more genuine gap, plus an operator request.
+
+- **"A few small JVM (Java) microservices" was one.** Only `orders` was Java; `frontend`
+  and `inventory` were Python. JavaMelody's requirement is to monitor "the JVM and *all*
+  Java apps", which is thin with a single app. `inventory` is now Java on Graviton and a
+  third service `payments` was added on pool 1 — three JVM services across two
+  architectures and three pools, all reporting to the collector. No new codebase was
+  needed: the Spring Boot app is entirely env-driven and its image is multi-arch.
+  `frontend` stays Python because the KEDA trigger reads its `sample_requests_total`.
+- **API endpoints opened to `0.0.0.0/0`** at the operator's request; `operator_cidr`
+  (single string, with a validation block refusing `0.0.0.0/0`) became
+  `api_public_access_cidrs` (list, defaulting to open). The API remains IAM-authenticated,
+  so this is reachability rather than authorisation, but it is a deliberate reduction in
+  defence-in-depth and a background security review flags it as such. Narrow the list in
+  `terraform.tfvars` to restore the lock-down.
+- **`maxSurge: 0`.** Adding services exposed a latent deadlock: required anti-affinity
+  gives every replica its own node, so a surge pod needs a spare node in its pool — but
+  pool 3's ceiling is deliberately exactly the four nodes that create the 1:3 ratio.
+  Rolling updates hung on a Pending pod. Surge traded for `maxUnavailable: 1`.
+
 ### Known rough edge
 
 `20-platform` may need a second `apply` on a cold cluster: the Helm provider resolves a

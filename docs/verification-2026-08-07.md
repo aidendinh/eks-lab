@@ -105,3 +105,37 @@ orders-bddfbc98d-k5fbf
 orders-bddfbc98d-q5s9n
 orders-bddfbc98d-ssgcq
 ```
+
+---
+
+# Second pass — three JVM services, open API endpoints
+
+## Public API access (now open; still IAM-authenticated)
+```
+eks-workload         0.0.0.0/0
+eks-observability    0.0.0.0/0
+```
+
+## Four services; three are JVM, spread across all three pools
+```
+      2 frontend -> general/spot/amd64
+      2 inventory -> graviton/spot/arm64
+      1 orders -> mixed/on-demand/amd64
+      3 orders -> mixed/spot/amd64
+      2 payments -> general/spot/amd64
+
+pods: 10   distinct nodes: 8   (equal => anti-affinity holding)
+```
+
+## JavaMelody aggregates every Java app
+```
+orders    -> 4 JVM nodes registered
+inventory -> 2 JVM nodes registered
+payments  -> 2 JVM nodes registered
+```
+
+## Argo CD
+```
+NAME                   SYNC STATUS   HEALTH STATUS
+sample-microservices   Synced        Healthy
+```
