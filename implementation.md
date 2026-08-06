@@ -11,20 +11,23 @@ Call it **$0.60–0.80/hr**. Tear it down the same day — section 6.
 
 - `terraform` ≥ 1.9, `kubectl`, `helm` 3+, `docker` with `buildx`, `aws` CLI v2.
 - `aws sts get-caller-identity --profile AWS` must succeed.
-- Your public address, which both API endpoints get locked to:
+- No `terraform.tfvars` is required — the defaults build the lab as it stands.
 
-  ```bash
-  curl -s https://checkip.amazonaws.com
-  ```
+Both clusters' public API endpoints default to `0.0.0.0/0`. The API still
+requires AWS IAM authentication and a matching EKS access entry, so this is
+reachability rather than authorisation, and it is what EKS itself defaults to
+when public access is enabled. It does place both API servers on the internet.
 
-  Put it in `terraform/envs/lab/10-infra/terraform.tfvars`:
+To restrict them instead, copy `terraform.tfvars.example` to
+`terraform.tfvars` in `10-infra` and set:
 
-  ```hcl
-  operator_cidr = "<your ip>/32"
-  ```
+```hcl
+api_public_access_cidrs = ["<your ip>/32"]   # curl -s https://checkip.amazonaws.com
+```
 
-  Re-run `terraform apply` in `10-infra` whenever your address changes, or every
-  `kubectl` call will hang.
+`terraform.tfvars` is git-ignored, because that value identifies where you work
+from. If you lock it down, re-run `terraform apply` in `10-infra` whenever your
+address changes or every `kubectl` call will hang.
 
 ## 1. Images
 
@@ -82,8 +85,9 @@ kubectl --context eks-workload get nodes -L workload-class
 kubectl --context eks-observability get nodes -L workload-class
 ```
 
-Expect 3 Ready and 2 Ready. `Unauthorized` means `operator_cidr` is stale or
-your CLI identity differs from the one that created the clusters.
+Expect 3 Ready and 2 Ready. `Unauthorized` means your CLI identity differs from
+the one that created the clusters; a hang means `api_public_access_cidrs` was
+narrowed and no longer includes your address.
 
 ## 3. Platform — `20-platform`
 

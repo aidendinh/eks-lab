@@ -118,10 +118,23 @@ list of machines to launch.
 
 ## Applications
 
-Three services, same HTTP contract (`/work`, `/healthz`, `/readyz`, `/metrics`):
+Four services, same HTTP contract (`/work`, `/healthz`, `/readyz`, `/metrics`):
 
-- **frontend** (Python) — entry point, calls the other two. KEDA scales it.
-- **inventory** (Python) — runs on Graviton; proves the images are multi-arch.
-- **orders** (Java, Spring Boot 3 + JavaMelody) — the JVM under observation.
+| Service | Runtime | Pool | Role |
+| --- | --- | --- | --- |
+| `frontend` | Python | 1 — Spot amd64 | Entry point, fans out to the other three. KEDA scales it |
+| `payments` | Java, Spring Boot 3 + JavaMelody | 1 — Spot amd64 | JVM under observation |
+| `inventory` | Java, Spring Boot 3 + JavaMelody | 2 — Graviton arm64 | JVM on arm64 |
+| `orders` | Java, Spring Boot 3 + JavaMelody | 3 — 1 OD : 3 Spot | JVM where the ratio is demonstrated |
 
-All three mount the same EFS-backed `ReadWriteMany` volume at `/data`.
+Three JVM services, all instrumented with JavaMelody and all registering with
+the collector, so the aggregated view covers *all* Java apps across two
+architectures and three pools. They share one Java image — the app is entirely
+environment-driven (`SERVICE_NAME`, `JAVAMELODY_APPLICATION_NAME`,
+`DOWNSTREAM_URLS`), so a second and third service needed no second codebase, and
+the image is a multi-arch manifest so the same tag runs on amd64 and arm64.
+
+`frontend` stays Python deliberately: it is the KEDA-scaled entry point, and the
+ScaledObject's PromQL reads its `sample_requests_total` counter.
+
+All four mount the same EFS-backed `ReadWriteMany` volume at `/data`.
