@@ -30,10 +30,12 @@ services:
     # Pool 1 is untainted, so no toleration is needed.
     tolerations: []
     # KEDA drives this one: it is the entry point, so its load is the load.
+    # maxReplicas is bounded by pool 1's vCPU ceiling: anti-affinity gives every
+    # replica its own node, so 4 replicas need 4 nodes = 8 vCPU of t3.medium.
     autoscaling:
       enabled: true
       minReplicas: 2
-      maxReplicas: 6
+      maxReplicas: 4
 
   inventory:
     replicaCount: 2
