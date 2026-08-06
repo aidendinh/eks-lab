@@ -16,3 +16,5 @@ override.tf.json
 *_override.tf.json
 tfplan
 .codesight/
+# Holds operator_cidr, which is a real home/office IP address.
+terraform.tfvars

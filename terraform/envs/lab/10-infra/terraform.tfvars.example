@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars and set to your own address:
+#   curl -s https://checkip.amazonaws.com
+#
+# This is the only CIDR allowed to reach either cluster's public API endpoint.
+# terraform.tfvars is git-ignored on purpose — it identifies where you work from.
+operator_cidr = "203.0.113.10/32"
