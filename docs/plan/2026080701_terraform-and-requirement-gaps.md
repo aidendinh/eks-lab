@@ -12,7 +12,10 @@ Starting state verified on 2026-08-07:
   clean create: no `import` blocks needed.
 - Survivors from the teardown: IAM roles `eks-lab-cluster-role`,
   `eks-lab-workload-node-role`, `eks-lab-observability-node-role`, and ECR repo
-  `eks-lab-sample`. Terraform will own these names, so the orphans are deleted in phase 1.
+  `eks-lab-sample`. Terraform names its own resources differently
+  (`eks-workload-node`, ECR repo `eks-lab`), so nothing collides and nothing had to be
+  deleted. **These four remain in the account as orphans — Terraform does not own them,
+  so `terraform destroy` will not remove them.** Delete by hand if the lab is retired.
 - The working tree had 38 tracked files deleted (unstaged). Restored; the one genuine
   uncommitted change (collector userinfo log-scrubbing) was committed first as `bdfacbf`.
 
