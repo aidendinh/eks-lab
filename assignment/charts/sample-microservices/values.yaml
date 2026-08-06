@@ -161,7 +161,11 @@ persistence:
 autoscaling:
   pollingInterval: 15
   cooldownPeriod: 120
-  prometheusAddress: http://workload-monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+  # kube-prometheus-stack truncates its generated Service name, so this is
+  # `<release>-kube-p-prometheus`, not `<release>-kube-prometheus-prometheus`.
+  # Getting it wrong leaves the ScaledObject Ready=False with the unhelpful
+  # message "Triggers defined in ScaledObject are not working correctly".
+  prometheusAddress: http://workload-monitoring-kube-p-prometheus.monitoring.svc.cluster.local:9090
   # Requests per second per replica before KEDA adds another.
   targetRequestsPerSecond: "5"
 
