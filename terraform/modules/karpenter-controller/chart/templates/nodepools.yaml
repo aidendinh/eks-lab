@@ -1,0 +1,164 @@
+{{/*
+Three pools, as the assignment specifies.
+
+  pool 1  general-spot-amd64  Spot, amd64, t3.medium or smaller
+  pool 2  graviton-arm64      Graviton, arm64, t4g.medium or smaller
+  pool 3  microservices-*     On-Demand + Spot at 1:3, dedicated to the JVM service
+
+Pool 3 is two NodePool objects on purpose. A single NodePool cannot express a
+capacity-type ratio — Karpenter would simply take the cheapest option for every
+node. Splitting it and giving Spot the higher weight makes Karpenter fill Spot
+first; when the Spot pool hits its vCPU ceiling the remaining Pending pod can
+only be satisfied On-Demand. The ratio is therefore a *result* of scheduling
+four anti-affine replicas, not a fleet written down anywhere. Change the replica
+count and the shape changes with it.
+*/}}
+
+# ---------------------------------------------------------------- pool 1
+# Spot amd64. Hosts the `frontend` service.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: general-spot-amd64
+spec:
+  template:
+    metadata:
+      labels:
+        workload-tier: general
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: default
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot"]
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: {{ toJson .Values.instanceTypes }}
+      expireAfter: 720h
+  limits:
+    cpu: "{{ .Values.generalCpuLimit }}"
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 1m
+
+---
+# ---------------------------------------------------------------- pool 2
+# Graviton arm64. Hosts the `inventory` service; proves the images are
+# genuinely multi-arch.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: graviton-arm64
+spec:
+  template:
+    metadata:
+      labels:
+        workload-tier: graviton
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: default
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot", "on-demand"]
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["arm64"]
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: {{ toJson .Values.graviton }}
+      expireAfter: 720h
+  limits:
+    cpu: "{{ .Values.gravitonCpuLimit }}"
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 1m
+
+---
+# ------------------------------------------------------- pool 3, Spot half
+# Higher weight, so Karpenter reaches for Spot before On-Demand. The vCPU
+# ceiling is what eventually forces the overflow.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: microservices-spot
+spec:
+  weight: 100
+  template:
+    metadata:
+      labels:
+        workload-tier: mixed
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: default
+      taints:
+        - key: {{ .Values.microservicesTaint.key }}
+          value: {{ .Values.microservicesTaint.value }}
+          effect: {{ .Values.microservicesTaint.effect }}
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot"]
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: {{ toJson .Values.instanceTypes }}
+      expireAfter: 720h
+  limits:
+    cpu: "{{ .Values.spotCpuLimit }}"
+  disruption:
+    # Spot capacity is reclaimed with two minutes' notice; consolidating it
+    # aggressively on top of that would churn the fleet for little saving.
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 2m
+
+---
+# -------------------------------------------------- pool 3, On-Demand half
+# Lower weight: the fallback Karpenter only reaches once Spot is capped.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: microservices-on-demand
+spec:
+  weight: 10
+  template:
+    metadata:
+      labels:
+        workload-tier: mixed
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: default
+      taints:
+        - key: {{ .Values.microservicesTaint.key }}
+          value: {{ .Values.microservicesTaint.value }}
+          effect: {{ .Values.microservicesTaint.effect }}
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: {{ toJson .Values.instanceTypes }}
+      expireAfter: 720h
+  limits:
+    cpu: "{{ .Values.ondemandCpuLimit }}"
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 2m

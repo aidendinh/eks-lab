@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+  finalizers:
+    # Makes deleting the Application clean up what it deployed, instead of
+    # orphaning the workloads.
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.repoUrl }}
+    targetRevision: {{ .Values.targetRevision }}
+    path: {{ .Values.path }}
+    helm:
+      releaseName: {{ .Values.releaseName }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Values.destNamespace }}
+  syncPolicy:
+    automated:
+      # selfHeal is what makes this GitOps rather than a one-shot install: an
+      # out-of-band kubectl edit is reverted to whatever Git says.
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+  revisionHistoryLimit: 3

@@ -44,8 +44,39 @@ spec:
           type: RuntimeDefault
       nodeSelector:
         {{- toYaml (mergeOverwrite (deepCopy $root.Values.nodeSelector) (dig "nodeSelector" (dict) $settings)) | nindent 8 }}
+      {{- $tolerations := dig "tolerations" $root.Values.tolerations $settings }}
+      {{- if $tolerations }}
       tolerations:
-        {{- toYaml $root.Values.tolerations | nindent 8 }}
+        {{- toYaml $tolerations | nindent 8 }}
+      {{- end }}
+      {{- $antiAffinity := dig "podAntiAffinity" (dict) $settings | default $root.Values.podAntiAffinity }}
+      {{- if $antiAffinity.enabled }}
+      # Anti-affinity and the hostname spread constraint below do related but
+      # distinct jobs. maxSkew only bounds the *difference* between nodes, so
+      # with few nodes two replicas may still share one. This forbids that
+      # outright: no two replicas of a service on the same node, ever.
+      affinity:
+        podAntiAffinity:
+          {{- if eq $antiAffinity.type "required" }}
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: {{ $root.Chart.Name | quote }}
+                  app.kubernetes.io/instance: {{ $root.Release.Name | quote }}
+                  app.kubernetes.io/component: {{ $name | quote }}
+          {{- else }}
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: {{ $root.Chart.Name | quote }}
+                    app.kubernetes.io/instance: {{ $root.Release.Name | quote }}
+                    app.kubernetes.io/component: {{ $name | quote }}
+          {{- end }}
+      {{- end }}
       topologySpreadConstraints:
         - maxSkew: {{ $root.Values.topologySpreadConstraints.zone.maxSkew }}
           topologyKey: topology.kubernetes.io/zone

@@ -1,0 +1,37 @@
+{{- $root := . -}}
+{{- range $name, $settings := .Values.services }}
+{{- if dig "autoscaling" "enabled" false $settings }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sample-microservices.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ $name | quote }}
+spec:
+  scaleTargetRef:
+    name: {{ $name }}
+  # KEDA takes ownership of the Deployment's replica count, so replicaCount in
+  # values only sets the starting point.
+  minReplicaCount: {{ dig "autoscaling" "minReplicas" 1 $settings }}
+  maxReplicaCount: {{ dig "autoscaling" "maxReplicas" 5 $settings }}
+  pollingInterval: {{ $root.Values.autoscaling.pollingInterval }}
+  # Long enough that a burst of traffic does not immediately scale back down
+  # and churn Karpenter nodes with it.
+  cooldownPeriod: {{ $root.Values.autoscaling.cooldownPeriod }}
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 300
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: {{ $root.Values.autoscaling.prometheusAddress | quote }}
+        # Request rate across all replicas of this service. KEDA divides by the
+        # current replica count, so the threshold reads as per-replica RPS.
+        query: sum(rate(sample_requests_total{service="{{ $name }}"}[1m]))
+        threshold: {{ $root.Values.autoscaling.targetRequestsPerSecond | quote }}
+{{- end }}
+{{- end }}

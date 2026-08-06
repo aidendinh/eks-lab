@@ -1,0 +1,5 @@
+apiVersion: v2
+name: sample-microservices-app
+description: Argo CD Application pointing at the microservices chart in Git
+type: application
+version: 0.1.0

@@ -130,6 +130,9 @@ module "observability_cluster" {
   subnet_ids          = module.vpc.private_subnet_ids
   public_access_cidrs = [var.operator_cidr]
 
+  # Prometheus, Loki and Tempo each keep a PersistentVolume here.
+  enable_ebs_csi = true
+
   node_groups = {
     # Pinned to one AZ on purpose: Prometheus, Loki and Tempo all hold EBS
     # PersistentVolumes, and an EBS volume cannot follow a replacement pod into

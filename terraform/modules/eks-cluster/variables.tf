@@ -55,6 +55,12 @@ variable "node_groups" {
   default = {}
 }
 
+variable "enable_ebs_csi" {
+  description = "Install the EBS CSI driver and its Pod Identity role. Needed only by clusters with stateful components."
+  type        = bool
+  default     = false
+}
+
 variable "coredns_configuration_values" {
   description = "JSON string passed to the CoreDNS add-on. Required when every node is tainted."
   type        = string

@@ -1,0 +1,39 @@
+# Single-binary Tempo with a local trace store, fronted by the shared telemetry
+# ingress on 4318 (OTLP/HTTP).
+
+replicas: 1
+
+tempo:
+  reportingEnabled: false
+  retention: 72h
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+  storage:
+    trace:
+      backend: local
+      local:
+        path: /var/tempo/traces
+      wal:
+        path: /var/tempo/wal
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+persistence:
+  enabled: true
+  size: 10Gi
+
+nodeSelector:
+  workload-class: observability
+
+service:
+  type: ClusterIP

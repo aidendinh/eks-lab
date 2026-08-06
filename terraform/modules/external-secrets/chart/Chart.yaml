@@ -1,0 +1,5 @@
+apiVersion: v2
+name: external-secrets-resources
+description: ClusterSecretStore and ExternalSecrets for the eks-lab secret
+type: application
+version: 0.1.0

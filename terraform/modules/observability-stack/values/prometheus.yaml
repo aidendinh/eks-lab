@@ -1,0 +1,89 @@
+# Central Prometheus. Receives remote-write from the workload cluster and keeps
+# the long-retention copy; the workload cluster's own Prometheus is a forwarder
+# with hours of retention, not days.
+
+alertmanager:
+  # No alert routing in a lab: there is nowhere for a page to go.
+  enabled: false
+
+grafana:
+  enabled: true
+  replicas: 1
+  persistence:
+    # Dashboards and datasources are provisioned from this chart, so a restart
+    # loses nothing worth a PersistentVolume.
+    enabled: false
+  service:
+    type: LoadBalancer
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: nlb
+  nodeSelector:
+    workload-class: observability
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  additionalDataSources:
+    - name: Loki
+      uid: loki
+      type: loki
+      access: proxy
+      url: http://loki-gateway.monitoring.svc.cluster.local
+      isDefault: false
+    - name: Tempo
+      uid: tempo
+      type: tempo
+      access: proxy
+      url: http://tempo.monitoring.svc.cluster.local:3100
+      isDefault: false
+      jsonData:
+        # Makes a span in Tempo pivot straight to the matching lines in Loki.
+        tracesToLogsV2:
+          datasourceUid: loki
+          filterByTraceID: true
+        serviceMap:
+          datasourceUid: prometheus
+
+prometheusOperator:
+  nodeSelector:
+    workload-class: observability
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+prometheus:
+  prometheusSpec:
+    replicas: 1
+    retention: 3d
+    # The whole point of cluster 2: accept remote-write from cluster 1.
+    enableRemoteWriteReceiver: true
+    externalLabels:
+      cluster: eks-observability
+    nodeSelector:
+      workload-class: observability
+    # Discover ServiceMonitors from every namespace, not only those carrying
+    # this release's label.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 300m
+        memory: 1Gi
+      limits:
+        cpu: "1"
+        memory: 3Gi
+
+kube-state-metrics:
+  nodeSelector:
+    workload-class: observability
+
+prometheus-node-exporter:
+  nodeSelector:
+    workload-class: observability

@@ -1,0 +1,34 @@
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: default
+spec:
+  # One alias for both architectures: Karpenter resolves the arch-appropriate
+  # AL2023 AMI from the instance type it decides to launch.
+  amiSelectorTerms:
+    - alias: al2023@latest
+  role: {{ .Values.nodeRole }}
+  # Discovered by tag, not by id. The VPC module stamps this tag on the private
+  # subnets, so the same manifest works in any account or region.
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: {{ .Values.discoveryTag }}
+  securityGroupSelectorTerms:
+    - id: {{ .Values.securityGroupId }}
+  metadataOptions:
+    httpTokens: required
+    # IMDSv2 with a single hop: a container cannot reach the node's instance
+    # credentials through the metadata service.
+    httpPutResponseHopLimit: 1
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 20Gi
+        volumeType: gp3
+        encrypted: true
+        deleteOnTermination: true
+  tags:
+    Project: eks-two-cluster-assignment
+    Environment: lab
+    ManagedBy: Karpenter
+    Owner: assignment

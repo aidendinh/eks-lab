@@ -54,7 +54,14 @@ resource "aws_eks_cluster" "this" {
 
   tags = merge(var.tags, { Name = var.name })
 
-  depends_on = [aws_iam_role_policy_attachment.cluster]
+  depends_on = [
+    aws_iam_role_policy_attachment.cluster,
+    # Must exist first. With control-plane logging enabled EKS creates this log
+    # group itself the moment the cluster starts, with no retention set — and
+    # then Terraform's own create fails with ResourceAlreadyExists. Creating it
+    # up front means EKS finds it and the retention below actually applies.
+    aws_cloudwatch_log_group.cluster,
+  ]
 }
 
 resource "aws_cloudwatch_log_group" "cluster" {
@@ -189,6 +196,58 @@ resource "aws_eks_addon" "kube_proxy" {
 # node is tainted — so the add-on needs a matching nodeSelector/tolerations or
 # its pods sit Pending and cluster DNS is dead. Add-on configuration replaces
 # rather than merges, so the defaults are restated in the caller's value.
+# EBS CSI, for the clusters that host stateful components. The observability
+# cluster needs it (Prometheus, Loki and Tempo each keep a PersistentVolume);
+# the workload cluster does not, because its only claim is the shared EFS one.
+resource "aws_iam_role" "ebs_csi" {
+  count = var.enable_ebs_csi ? 1 : 0
+
+  name = "${var.name}-ebs-csi"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "pods.eks.amazonaws.com" }
+      Action    = ["sts:AssumeRole", "sts:TagSession"]
+    }]
+  })
+
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "ebs_csi" {
+  count = var.enable_ebs_csi ? 1 : 0
+
+  role       = aws_iam_role.ebs_csi[0].name
+  policy_arn = "arn:${data.aws_partition.current.partition}:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
+}
+
+resource "aws_eks_pod_identity_association" "ebs_csi" {
+  count = var.enable_ebs_csi ? 1 : 0
+
+  cluster_name    = aws_eks_cluster.this.name
+  namespace       = "kube-system"
+  service_account = "ebs-csi-controller-sa"
+  role_arn        = aws_iam_role.ebs_csi[0].arn
+}
+
+resource "aws_eks_addon" "ebs_csi" {
+  count = var.enable_ebs_csi ? 1 : 0
+
+  cluster_name                = aws_eks_cluster.this.name
+  addon_name                  = "aws-ebs-csi-driver"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+  tags                        = var.tags
+
+  depends_on = [
+    aws_eks_node_group.this,
+    aws_eks_pod_identity_association.ebs_csi,
+    aws_iam_role_policy_attachment.ebs_csi,
+  ]
+}
+
 resource "aws_eks_addon" "coredns" {
   cluster_name                = aws_eks_cluster.this.name
   addon_name                  = "coredns"

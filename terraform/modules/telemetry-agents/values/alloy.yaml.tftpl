@@ -1,0 +1,111 @@
+# Alloy: log tailer and trace forwarder, one pod per node.
+
+controller:
+  type: daemonset
+  # Every node in this cluster is tainted, and logs from the microservice nodes
+  # are the ones that matter most.
+  tolerations:
+    - operator: Exists
+
+alloy:
+  mounts:
+    varlog: true
+  extraPorts:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
+  configMap:
+    content: |-
+      logging {
+        level  = "info"
+        format = "logfmt"
+      }
+
+      // Only this node's pods: each DaemonSet member tails its own kubelet
+      // directory, so the field selector keeps them from duplicating work.
+      discovery.kubernetes "pods" {
+        role = "pod"
+        selectors {
+          role  = "pod"
+          field = "spec.nodeName=" + sys.env("HOSTNAME")
+        }
+      }
+
+      discovery.relabel "pod_logs" {
+        targets = discovery.kubernetes.pods.targets
+
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+          target_label  = "app"
+        }
+        // Build the on-disk glob for this container's logs.
+        rule {
+          source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+          separator     = "/"
+          target_label  = "__path__"
+          replacement   = "/var/log/pods/*$1/*.log"
+        }
+      }
+
+      // loki.source.file needs concrete paths; __path__ above is a glob, and
+      // local.file_match is what expands one into the other.
+      local.file_match "pod_logs" {
+        path_targets = discovery.relabel.pod_logs.output
+      }
+
+      loki.source.file "pod_logs" {
+        targets    = local.file_match.pod_logs.targets
+        forward_to = [loki.process.pod_logs.receiver]
+      }
+
+      loki.process "pod_logs" {
+        // Strips the CRI envelope so Loki stores the application's own line.
+        stage.cri {}
+        forward_to = [loki.write.central.receiver]
+      }
+
+      loki.write "central" {
+        external_labels = {
+          cluster = "${cluster_name}",
+        }
+        endpoint {
+          url = "http://${telemetry_endpoint}/loki/api/v1/push"
+        }
+      }
+
+      // Traces: the applications export OTLP to this DaemonSet, which relays
+      // them to Tempo on the observability cluster.
+      otelcol.receiver.otlp "applications" {
+        grpc {
+          endpoint = "0.0.0.0:4317"
+        }
+        http {
+          endpoint = "0.0.0.0:4318"
+        }
+        output {
+          traces = [otelcol.exporter.otlphttp.central.input]
+        }
+      }
+
+      otelcol.exporter.otlphttp "central" {
+        client {
+          endpoint = "http://${telemetry_endpoint}"
+        }
+      }

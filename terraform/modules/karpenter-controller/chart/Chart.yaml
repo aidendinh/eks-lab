@@ -1,0 +1,5 @@
+apiVersion: v2
+name: karpenter-nodepools
+description: EC2NodeClass and the three NodePools for the workload cluster
+type: application
+version: 0.1.0

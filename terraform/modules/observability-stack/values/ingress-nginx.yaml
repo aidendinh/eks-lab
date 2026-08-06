@@ -1,0 +1,25 @@
+# The ingestion front door for cluster 1's telemetry.
+
+controller:
+  replicaCount: 1
+  nodeSelector:
+    workload-class: observability
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  service:
+    type: LoadBalancer
+    externalTrafficPolicy: Cluster
+    annotations:
+      # The in-tree AWS cloud provider reads `-internal`, not `-scheme`. With
+      # the wrong key the NLB comes up internet-facing.
+      service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+      service.beta.kubernetes.io/aws-load-balancer-type: nlb
+  ingressClassResource:
+    name: nginx
+    enabled: true
+    default: false

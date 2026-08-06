@@ -1,0 +1,74 @@
+# kube-prometheus-stack as a remote-write forwarder on the workload cluster.
+# Grafana and Alertmanager are off: this cluster is not where anyone looks.
+
+alertmanager:
+  enabled: false
+
+grafana:
+  enabled: false
+
+prometheusOperator:
+  # The admission-webhook patch job is a Helm hook. Every node here is tainted,
+  # so without its own toleration the job stays Pending and the whole install
+  # times out — with an error that points at the webhook, not at the taint.
+  admissionWebhooks:
+    patch:
+      nodeSelector:
+        workload-class: platform
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: platform
+          effect: NoSchedule
+  nodeSelector:
+    workload-class: platform
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: platform
+      effect: NoSchedule
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+prometheus:
+  prometheusSpec:
+    replicas: 1
+    retention: 2h
+    # Pick up ServiceMonitors from any namespace, including the Argo CD-managed
+    # `sample` namespace.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    nodeSelector:
+      workload-class: platform
+    tolerations:
+      - key: dedicated
+        operator: Equal
+        value: platform
+        effect: NoSchedule
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+
+kube-state-metrics:
+  nodeSelector:
+    workload-class: platform
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: platform
+      effect: NoSchedule
+
+prometheus-node-exporter:
+  # Must run on every node, including the tainted Karpenter ones, or the
+  # microservice nodes report no host metrics at all.
+  tolerations:
+    - operator: Exists
