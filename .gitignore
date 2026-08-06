@@ -16,3 +16,4 @@ override.tf.json
 *_override.tf.json
 tfplan
 .terraform.lock.hcl
+.codesight/
