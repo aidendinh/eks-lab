@@ -83,7 +83,7 @@ module "workload_cluster" {
   name                = var.workload_cluster_name
   kubernetes_version  = var.kubernetes_version
   subnet_ids          = module.vpc.private_subnet_ids
-  public_access_cidrs = [var.operator_cidr]
+  public_access_cidrs = var.api_public_access_cidrs
 
   node_groups = {
     # Hosts infrastructure only: Prometheus agent, JavaMelody collector,
@@ -128,7 +128,7 @@ module "observability_cluster" {
   name                = var.observability_cluster_name
   kubernetes_version  = var.kubernetes_version
   subnet_ids          = module.vpc.private_subnet_ids
-  public_access_cidrs = [var.operator_cidr]
+  public_access_cidrs = var.api_public_access_cidrs
 
   # Prometheus, Loki and Tempo each keep a PersistentVolume here.
   enable_ebs_csi = true

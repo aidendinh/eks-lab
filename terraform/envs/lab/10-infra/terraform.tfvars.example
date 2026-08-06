@@ -1,6 +1,7 @@
-# Copy to terraform.tfvars and set to your own address:
+# Optional. The defaults in variables.tf build the lab as-is.
+#
+# Uncomment to restrict who can reach the Kubernetes API endpoints. Default is
+# open (0.0.0.0/0); the API is still IAM-authenticated either way.
 #   curl -s https://checkip.amazonaws.com
 #
-# This is the only CIDR allowed to reach either cluster's public API endpoint.
-# terraform.tfvars is git-ignored on purpose — it identifies where you work from.
-operator_cidr = "203.0.113.10/32"
+# api_public_access_cidrs = ["203.0.113.10/32"]

@@ -58,13 +58,14 @@ variable "graviton_instance_types" {
 
 variable "general_cpu_limit" {
   description = <<-EOT
-    vCPU ceiling for pool 1 (Spot, amd64). Must leave room for KEDA to scale the
-    frontend: replicas have required anti-affinity, so each one needs its own
-    node. At 2 vCPU per t3.medium, 8 allows the frontend's maxReplicas of 4.
-    Too low and scaled-up pods sit Pending instead of landing on new nodes.
+    vCPU ceiling for pool 1 (Spot, amd64). Every replica here needs its own node
+    because of the required anti-affinity, so the ceiling has to cover the worst
+    case: frontend at its maxReplicas of 4, plus payments at 2. Six nodes at
+    2 vCPU per t3.medium is 12. Too low and scaled-up pods sit Pending rather
+    than landing on new nodes.
   EOT
   type    = string
-  default = "8"
+  default = "12"
 }
 
 variable "graviton_cpu_limit" {

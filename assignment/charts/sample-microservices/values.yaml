@@ -16,14 +16,21 @@ serviceAccount:
 # real workload rather than existing only on paper:
 #
 #   frontend   -> pool 1  general-spot-amd64   Spot, amd64, <= t3.medium
+#   payments   -> pool 1  general-spot-amd64   Spot, amd64, <= t3.medium
 #   inventory  -> pool 2  graviton-arm64       Graviton, arm64, <= t4g.medium
 #   orders     -> pool 3  microservices-*      On-Demand + Spot at 1:3
+#
+# Three of the four are JVM services (orders, inventory, payments), all
+# instrumented with JavaMelody and all reporting into the collector. frontend
+# stays Python because it is the KEDA-scaled entry point and its
+# `sample_requests_total` counter is what the ScaledObject's PromQL queries.
 services:
   frontend:
     replicaCount: 2
     downstreamUrls:
       - http://orders:8080/work
       - http://inventory:8080/work
+      - http://payments:8080/work
     nodeSelector:
       workload-tier: general
       kubernetes.io/arch: amd64
@@ -37,15 +44,74 @@ services:
       minReplicas: 2
       maxReplicas: 4
 
+  # A JVM on Graviton. Same Java image as `orders` — the app is entirely
+  # env-driven, so a second service needs no second codebase — and the image is
+  # a multi-arch manifest, so this tag resolves to its arm64 child here and its
+  # amd64 child on the other pools. Proves the JVM runs on both architectures.
   inventory:
     replicaCount: 2
     downstreamUrls: []
-    # Graviton. The image is a multi-arch manifest, so the same tag resolves to
-    # an arm64 child here and an amd64 one on the frontend nodes.
+    image:
+      tag: "orders-java-0.1.0"
     nodeSelector:
       workload-tier: graviton
       kubernetes.io/arch: arm64
     tolerations: []
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 768Mi
+    startupProbe:
+      enabled: true
+      failureThreshold: 30
+      periodSeconds: 5
+    metrics:
+      path: /monitoring
+      params:
+        format:
+          - prometheus
+      normalizeDotsInMetricNames: true
+    javamelody:
+      enabled: true
+      applicationName: inventory
+      collectorUrlSecret: javamelody-collector-url
+
+  # Third JVM service, on the Spot amd64 pool. Exists so the JavaMelody
+  # collector has more than one application to aggregate and the "all Java apps"
+  # requirement is demonstrated across architectures and pools.
+  payments:
+    replicaCount: 2
+    downstreamUrls: []
+    image:
+      tag: "orders-java-0.1.0"
+    nodeSelector:
+      workload-tier: general
+      kubernetes.io/arch: amd64
+    tolerations: []
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 768Mi
+    startupProbe:
+      enabled: true
+      failureThreshold: 30
+      periodSeconds: 5
+    metrics:
+      path: /monitoring
+      params:
+        format:
+          - prometheus
+      normalizeDotsInMetricNames: true
+    javamelody:
+      enabled: true
+      applicationName: payments
+      collectorUrlSecret: javamelody-collector-url
 
   # The Java service. Same HTTP contract as the Python ones, but a JVM with
   # JavaMelody attached, so it needs a different image, more memory, a longer

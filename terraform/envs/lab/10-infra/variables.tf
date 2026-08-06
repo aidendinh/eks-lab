@@ -16,17 +16,25 @@ variable "kubernetes_version" {
   default     = "1.36"
 }
 
-variable "operator_cidr" {
+variable "api_public_access_cidrs" {
   description = <<-EOT
-    CIDR allowed to reach both public API endpoints, normally "<your ip>/32".
-    Terraform, kubectl and helm all run from here. Set it in terraform.tfvars;
-    there is deliberately no default, because 0.0.0.0/0 must never be one.
+    CIDRs allowed to reach both clusters' public Kubernetes API endpoints.
+
+    Defaults to open. The API server still requires AWS IAM authentication — an
+    access entry must exist for the caller — so this is reachability, not
+    authorisation, and it is what EKS itself defaults to when public access is
+    enabled. It does put both API servers on the internet, which is a real
+    increase in attack surface for anything auth-bypassing.
+
+    Narrow it to ["<your ip>/32"] in terraform.tfvars when you want the lab
+    locked down; a list, so an office and a home address can both be listed.
   EOT
-  type        = string
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
 
   validation {
-    condition     = var.operator_cidr != "0.0.0.0/0"
-    error_message = "Refusing to open the Kubernetes API to the whole internet."
+    condition     = length(var.api_public_access_cidrs) > 0
+    error_message = "Provide at least one CIDR, or the API endpoint is unreachable."
   }
 }
 
