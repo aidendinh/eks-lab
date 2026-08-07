@@ -109,6 +109,38 @@ resource "aws_eks_access_entry" "node" {
   type          = "EC2_LINUX"
 }
 
+# ------------------------------------------------------------------- admins
+
+# bootstrap_cluster_creator_admin_permissions above grants Kubernetes admin to
+# exactly one principal: whoever ran the first `apply`. Everyone else — a second
+# operator, a CI role, or the same human whose console sign-in resolves to a
+# different principal than their CLI profile — authenticates fine at the IAM
+# layer and is then Unauthorized by Kubernetes RBAC. These entries are how any
+# other identity gets in; there is no aws-auth ConfigMap under
+# authentication_mode = "API".
+resource "aws_eks_access_entry" "admin" {
+  for_each = toset(var.admin_principal_arns)
+
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = each.value
+  type          = "STANDARD"
+  tags          = var.tags
+}
+
+# An entry on its own authenticates but authorises nothing; the policy
+# association is what carries the permissions.
+resource "aws_eks_access_policy_association" "admin" {
+  for_each = aws_eks_access_entry.admin
+
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = each.value.principal_arn
+  policy_arn    = "arn:${data.aws_partition.current.partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+}
+
 # ------------------------------------------------------------- managed nodes
 
 resource "aws_eks_node_group" "this" {

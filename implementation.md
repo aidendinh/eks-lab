@@ -89,6 +89,19 @@ Expect 3 Ready and 2 Ready. `Unauthorized` means your CLI identity differs from
 the one that created the clusters; a hang means `api_public_access_cidrs` was
 narrowed and no longer includes your address.
 
+The same applies to the console: the EKS **Nodes** and **Workloads** tabs read
+the Kubernetes API, so an account administrator with no access entry sees
+`Error loading resources — Unauthorized` there while every IAM-backed tab loads
+normally. Only the principal that ran the first `apply` is a Kubernetes admin.
+Add others through `cluster_admin_principal_arns`, using the IAM role ARN rather
+than the assumed-role session ARN `aws sts get-caller-identity` returns:
+
+```hcl
+cluster_admin_principal_arns = [
+  "arn:aws:iam::600627340244:role/aws-reserved/sso.amazonaws.com/ap-southeast-1/AWSReservedSSO_Admin_abc123",
+]
+```
+
 ## 3. Platform — `20-platform`
 
 ```bash

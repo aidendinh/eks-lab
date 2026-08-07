@@ -18,6 +18,44 @@ variable "public_access_cidrs" {
   type        = list(string)
 }
 
+variable "admin_principal_arns" {
+  description = <<-EOT
+    IAM principals to grant Kubernetes cluster-admin, beyond the implicit
+    cluster-creator entry.
+
+    The cluster runs `authentication_mode = "API"`, so access entries are the
+    only path from IAM into Kubernetes RBAC — there is no aws-auth ConfigMap to
+    fall back on. Bootstrap admin covers whoever ran `apply` and nobody else, so
+    any other identity — a colleague, a CI role, or the same human signed into
+    the console under a different principal — is Unauthorized on everything that
+    reads the Kubernetes API, including the console's Nodes and Workloads tabs.
+
+    Give the IAM **role** ARN, never the assumed-role session ARN the console
+    shows you. For IAM Identity Center that is
+    arn:aws:iam::<account>:role/aws-reserved/sso.amazonaws.com/<region>/AWSReservedSSO_<PermissionSet>_<hash>.
+    The access-entry API rejects STS session principals outright, since a session
+    is temporary and has no permanent identity to attach permissions to.
+
+    Do not list the principal that ran the first `apply`. Its bootstrap entry
+    already exists and is not in Terraform state, so Terraform would try to
+    create a duplicate and the apply would fail with ResourceInUseException —
+    one ARN can hold only one access entry per cluster.
+
+    Same-account principals only; the API will not accept an ARN from another
+    AWS account.
+  EOT
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for arn in var.admin_principal_arns :
+      can(regex("^arn:[^:]+:iam::[0-9]{12}:(role|user)/", arn))
+    ])
+    error_message = "Each ARN must be an IAM role or user ARN. An assumed-role session ARN (arn:aws:sts::<account>:assumed-role/<role>/<session>) is rejected by the access-entry API; use the underlying role instead."
+  }
+}
+
 variable "enabled_log_types" {
   description = "Control-plane log types to ship to CloudWatch."
   type        = list(string)

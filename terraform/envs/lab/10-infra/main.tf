@@ -80,10 +80,11 @@ resource "aws_ecr_lifecycle_policy" "apps" {
 module "workload_cluster" {
   source = "../../../modules/eks-cluster"
 
-  name                = var.workload_cluster_name
-  kubernetes_version  = var.kubernetes_version
-  subnet_ids          = module.vpc.private_subnet_ids
-  public_access_cidrs = var.api_public_access_cidrs
+  name                 = var.workload_cluster_name
+  kubernetes_version   = var.kubernetes_version
+  subnet_ids           = module.vpc.private_subnet_ids
+  public_access_cidrs  = var.api_public_access_cidrs
+  admin_principal_arns = var.cluster_admin_principal_arns
 
   node_groups = {
     # Hosts infrastructure only: Prometheus agent, JavaMelody collector,
@@ -125,10 +126,11 @@ module "workload_cluster" {
 module "observability_cluster" {
   source = "../../../modules/eks-cluster"
 
-  name                = var.observability_cluster_name
-  kubernetes_version  = var.kubernetes_version
-  subnet_ids          = module.vpc.private_subnet_ids
-  public_access_cidrs = var.api_public_access_cidrs
+  name                 = var.observability_cluster_name
+  kubernetes_version   = var.kubernetes_version
+  subnet_ids           = module.vpc.private_subnet_ids
+  public_access_cidrs  = var.api_public_access_cidrs
+  admin_principal_arns = var.cluster_admin_principal_arns
 
   # Prometheus, Loki and Tempo each keep a PersistentVolume here.
   enable_ebs_csi = true

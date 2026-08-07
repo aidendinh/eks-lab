@@ -38,6 +38,24 @@ variable "api_public_access_cidrs" {
   }
 }
 
+variable "cluster_admin_principal_arns" {
+  description = <<-EOT
+    Extra IAM principals granted Kubernetes cluster-admin on both clusters.
+
+    Empty by default, which leaves exactly one admin: the principal that ran the
+    first `apply`. Add your console identity here if the EKS console shows
+    "Unauthorized" under Nodes or Workloads — that view reads the Kubernetes API,
+    which AWS account admin does not reach on its own.
+
+    Use the IAM role ARN, not the assumed-role session ARN. Find it with
+    `aws sts get-caller-identity`: a session ARN of
+    arn:aws:sts::<account>:assumed-role/AWSReservedSSO_Admin_abc123/you maps to
+    arn:aws:iam::<account>:role/aws-reserved/sso.amazonaws.com/<region>/AWSReservedSSO_Admin_abc123.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 variable "workload_cluster_name" {
   description = "Name of cluster 1, which runs the JVM microservices."
   type        = string

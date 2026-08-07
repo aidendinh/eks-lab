@@ -5,3 +5,19 @@
 #   curl -s https://checkip.amazonaws.com
 #
 # api_public_access_cidrs = ["203.0.113.10/32"]
+#
+# Uncomment to give more IAM principals Kubernetes cluster-admin. Only the
+# principal that ran the first `apply` has it otherwise — which is why the EKS
+# console can say "Unauthorized" on the Nodes tab to an account administrator.
+# The console's Kubernetes views go through RBAC, not IAM.
+#
+# Must be the IAM *role* ARN, not the assumed-role session ARN that
+# `aws sts get-caller-identity` prints. Convert an SSO session ARN like
+#   arn:aws:sts::600627340244:assumed-role/AWSReservedSSO_Admin_abc123/you
+# by taking the role name and looking it up:
+#   aws iam list-roles --path-prefix /aws-reserved/sso.amazonaws.com/ \
+#     --query "Roles[?starts_with(RoleName,'AWSReservedSSO_Admin')].Arn" --output text
+#
+# cluster_admin_principal_arns = [
+#   "arn:aws:iam::600627340244:role/aws-reserved/sso.amazonaws.com/ap-southeast-1/AWSReservedSSO_Admin_abc123",
+# ]
